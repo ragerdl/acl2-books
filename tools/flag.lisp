@@ -477,15 +477,15 @@ effect.  We simply translate subgoal hints to computed hints:</p>
      nil)))
 
 
-(defun make-flag-body-aux (fn-name formals alist full-alist world)
+(defun make-flag-body-aux (flag-var fn-name formals alist full-alist world)
   (if (consp alist)
       (let* ((orig-body (get-body (caar alist) world))
              (new-body (mangle-body orig-body fn-name full-alist formals world)))
         (cond ((consp (cdr alist))
-               (cons `(,(cdar alist) ,new-body)
-                     (make-flag-body-aux fn-name formals (cdr alist) full-alist world)))
+               (cons `((equal ,flag-var ',(cdar alist)) ,new-body)
+                     (make-flag-body-aux flag-var fn-name formals (cdr alist) full-alist world)))
               (t
-               (list `(otherwise ,new-body)))))
+               (list `(t ,new-body)))))
     (er hard 'make-flag-body-aux "Never get here.")))
 
 (defun make-flag-body (fn-name flag-var alist hints ruler-extenders world)
@@ -501,9 +501,9 @@ effect.  We simply translate subgoal hints to computed hints:</p>
                                                       world)
                      :mode :logic)
               (ignorable . ,formals))
-     (case ,flag-var
+     (cond
        .
-       ,(make-flag-body-aux fn-name formals alist alist world)))))
+       ,(make-flag-body-aux flag-var fn-name formals alist alist world)))))
 
 (defun extract-keyword-from-args (kwd args)
   (if (consp args)
@@ -582,11 +582,13 @@ effect.  We simply translate subgoal hints to computed hints:</p>
                                (set-difference-eq possibilities
                                                   (acl2::strip-cadrs inequivs))))
                          (and (eql (len not-ruled-out) 1)
-                              (list 'quote (car not-ruled-out)))))))
+                              (list 'quote (car not-ruled-out))))))
+          (first (extract-keyword-from-args :first cases))
+          (cases (throw-away-keyword-parts cases)))
       (and flagval
            (let ((hints (cdr (assoc (cadr flagval) cases))))
              `(:computed-hint-replacement
-               ,(translate-subgoal-to-computed-hints hints)
+               (,@first . ,(translate-subgoal-to-computed-hints hints))
                :clause-processor (flag-is-cp clause ,flagval)))))))
 
 (defmacro flag-hint-cases (flagname &rest cases)
@@ -613,7 +615,7 @@ effect.  We simply translate subgoal hints to computed hints:</p>
 
 
 
-(defun pair-up-cases-with-thmparts (alist thmparts skip-ok)
+(defun pair-up-cases-with-thmparts (flag-var alist thmparts skip-ok)
   ;; Each thmpart is an thing like
   ;; _either_ (flag <thm-body> :name ... :rule-classes ... :doc ...)
   ;;;    (for backwards compatibility)
@@ -632,9 +634,9 @@ effect.  We simply translate subgoal hints to computed hints:</p>
                             (t ;; (flag body ...)
                              (cadr lookup)))))
             (if (consp (cdr alist))
-                (cons `(,flag ,body)
-                      (pair-up-cases-with-thmparts (cdr alist) thmparts skip-ok))
-              (list `(otherwise ,body))))))
+                (cons `((equal ,flag-var ',flag) ,body)
+                      (pair-up-cases-with-thmparts flag-var (cdr alist) thmparts skip-ok))
+              (list `(t ,body))))))
     (er hard 'pair-up-cases-with-thmparts
         "Never get here.")))
 
@@ -734,25 +736,27 @@ given.  The following theorem does not have a name: ~x0~%" entry)))))
                   (car flag-fncall))))
          (instructions (extract-keyword-from-args :instructions args))
          (user-hints (extract-keyword-from-args :hints args))
+         (no-induction-hint (extract-keyword-from-args :no-induction-hint args))
          (skip-ok (extract-keyword-from-args :skip-others args))
          (hints (and (not instructions)
                      (append
-                      (if (and (consp (car user-hints))
-                               (stringp (caar user-hints))
-                               (equal (string-upcase (caar user-hints))
-                                      "GOAL"))
-                          ;; First hint is for goal.
-                          (if (extract-keyword-from-args :induct (car user-hints))
-                              ;; Explicit induct hint is provided; do not override.
-                              user-hints
-                            ;; Provide our induct hint in addition to the hints
-                            ;; provided in goal.
-                            (cons `("Goal" :induct ,flag-fncall
-                                    . ,(cdar user-hints))
-                                  (cdr user-hints)))
-                        ;; No goal hint; cons our induction hint onto the rest.
-                        (cons `("Goal" :induct ,flag-fncall)
-                              user-hints))
+                      (cond (no-induction-hint user-hints)
+                            ((and (consp (car user-hints))
+                                  (stringp (caar user-hints))
+                                  (equal (string-upcase (caar user-hints))
+                                         "GOAL"))
+                             ;; First hint is for goal.
+                             (if (extract-keyword-from-args :induct (car user-hints))
+                                 ;; Explicit induct hint is provided; do not override.
+                                 user-hints
+                               ;; Provide our induct hint in addition to the hints
+                               ;; provided in goal.
+                               (cons `("Goal" :induct ,flag-fncall
+                                       . ,(cdar user-hints))
+                                     (cdr user-hints))))
+                            ;; No goal hint; cons our induction hint onto the rest.
+                            (t (cons `("Goal" :induct ,flag-fncall)
+                                     user-hints)))
                       (list
                        `(flag-hint-cases
                          ,flag-var
@@ -762,8 +766,8 @@ given.  The following theorem does not have a name: ~x0~%" entry)))))
        (encapsulate
         ()
         (local (defthm ,name
-                 (case ,flag-var . ,(pair-up-cases-with-thmparts
-                                     alist thmparts skip-ok))
+                 (cond . ,(pair-up-cases-with-thmparts
+                           flag-var alist thmparts skip-ok))
                  :rule-classes nil
                  :hints ,hints
                  :instructions ,instructions
@@ -786,6 +790,17 @@ given.  The following theorem does not have a name: ~x0~%" entry)))))
             (cons `(,flag (,fn . ,fn-formals))
                   (make-cases-for-equiv (cdr alist) world))
           (list `(otherwise (,fn . ,fn-formals)))))
+    nil))
+
+
+(defun equiv-theorem-cases (flag-fn formals alist world)
+  (if (consp alist)
+      (let* ((fn   (caar alist))
+             (flag (cdar alist))
+             (fn-formals (get-formals fn world)))
+        (cons `(equal (,flag-fn ',flag . ,formals)
+                      (,fn . ,fn-formals))
+              (equiv-theorem-cases flag-fn formals (cdr alist) world)))
     nil))
 
 
@@ -848,8 +863,19 @@ given.  The following theorem does not have a name: ~x0~%" entry)))))
     (cons `(table flag-fns ',(caar alist) ',entry)
           (flag-table-events (cdr alist) entry))))
 
+(defun apply-formals-subst (formals subst)
+  (if (atom formals)
+      nil
+    (let ((look (assoc (car formals) subst)))
+      (if look
+          (cons (cdr look) (apply-formals-subst (cdr formals) subst))
+        (cons (car formals) (apply-formals-subst (cdr formals) subst))))))
+  
+
 (defun make-flag-fn (flag-fn-name clique-member-name flag-var flag-mapping hints
-                                  defthm-macro-name local ruler-extenders world)
+                                  defthm-macro-name
+                                  formals-subst
+                                  local ruler-extenders world)
   (let* ((flag-var (or flag-var
                        (intern-in-package-of-symbol "FLAG" flag-fn-name)))
          (alist (or flag-mapping
@@ -871,36 +897,40 @@ given.  The following theorem does not have a name: ~x0~%" entry)))))
       (,(if local 'local 'id)
        ,(make-flag-body flag-fn-name flag-var alist hints ruler-extenders world))
       ,(make-defthm-macro defthm-macro-name alist flag-var
-                          `(,flag-fn-name ,flag-var . ,formals))
+                          `(,flag-fn-name ,flag-var
+                                          . ,(apply-formals-subst formals formals-subst)))
 
       (,(if local 'local 'id)
        (with-output
         :off (prove event) ;; hides induction scheme, too
         (encapsulate nil
           (logic)
+          (local (defthm flag-equiv-lemma
+                   (equal (,flag-fn-name ,flag-var . ,formals)
+                          (case ,flag-var
+                            ,@(make-cases-for-equiv alist world)))
+                   :hints (("Goal"
+                            :induct
+                            (,flag-fn-name ,flag-var . ,formals)
+                            :in-theory
+                            (set-difference-theories
+                             (union-theories (theory 'minimal-theory)
+                                             '((:induction ,flag-fn-name)
+                                               (:rewrite expand-all-hides)))
+                             '(;; Jared found mv-nth to be slowing down a couple of flag
+                               ;; function admissions.  Take it out of the minimal theory.
+                               (:definition mv-nth)
+                               ;; Jared found a case where "linear" forced some goals
+                               ;; from an equality, which were unprovable.  So, turn
+                               ;; off forcing.
+                               (:executable-counterpart force))))
+                           (flag-expand-computed-hint stable-under-simplificationp
+                                                      ACL2::clause
+                                                      ',(cons flag-fn-name
+                                                              (strip-cars
+                                                               alist))))))
           (defthm ,equiv-thm-name
-            (equal (,flag-fn-name ,flag-var . ,formals)
-                   (case ,flag-var
-                     ,@(make-cases-for-equiv alist world)))
-            :hints (("Goal"
-                     :induct
-                     (,flag-fn-name ,flag-var . ,formals)
-                     :in-theory
-                     (set-difference-theories
-                      (union-theories (theory 'minimal-theory)
-                                      '((:induction ,flag-fn-name)
-                                        (:rewrite expand-all-hides)))
-                      '(;; Jared found mv-nth to be slowing down a couple of flag
-                        ;; function admissions.  Take it out of the minimal theory.
-                        (:definition mv-nth)
-                        ;; Jared found a case where "linear" forced some goals
-                        ;; from an equality, which were unprovable.  So, turn
-                        ;; off forcing.
-                        (:executable-counterpart force))))
-                    (flag-expand-computed-hint stable-under-simplificationp
-                                               ACL2::clause
-                                               ',(cons flag-fn-name
-                                                       (strip-cars alist))))))))
+            (and . ,(equiv-theorem-cases flag-fn-name formals alist world))))))
 
       (progn . ,(flag-table-events alist `(,flag-fn-name
                                            ,alist
@@ -913,6 +943,7 @@ given.  The following theorem does not have a name: ~x0~%" entry)))))
                      &key
                      flag-var
                      flag-mapping
+                     formals-subst
                      hints
                      defthm-macro-name
                      local
@@ -923,6 +954,7 @@ given.  The following theorem does not have a name: ~x0~%" entry)))))
                              ',flag-mapping
                              ',hints
                              ',defthm-macro-name
+                             ',formals-subst
                              ',local
                              ',ruler-extenders
                              (w state))))

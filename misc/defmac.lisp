@@ -1,10 +1,11 @@
+; Copyright (C) 2013, Regents of the University of Texas
+; Written by Matt Kaufmann, 2/27/09
+; License: A 3-clause BSD license.  See the LICENSE file distributed with ACL2.
+
 ; defmac.lisp
 ; Automated support for faster macroexpansion
-; Matt Kaufmann
-; 2/27/09
 
 (in-package "ACL2")
-(include-book "doc-section")
 
 ; See :doc defmac for information.
 
@@ -67,7 +68,7 @@
 
 ; The documentation below borrows heavily from :doc defmacro.
 
-  ":Doc-Section misc
+  ":Doc-Section defmacro
 
   define a macro that expands efficiently~/
   ~bv[]

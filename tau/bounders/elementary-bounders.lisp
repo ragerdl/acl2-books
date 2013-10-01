@@ -1,3 +1,7 @@
+; Copyright (C) 2013, ForrestHunt, Inc.
+; Written by J Strother Moore, December, 2012
+; License: A 3-clause BSD license.  See the LICENSE file distributed with ACL2.
+
 ; (certify-book "elementary-bounders")
 
 ; Tau Interval Functions for Basic Arithmetic
@@ -183,6 +187,17 @@
 ; -----------------------------------------------------------------
 
 (in-package "ACL2")
+
+; The following was added 9/30/2013 by Matt K. to avoid storage "exhausted"
+; error for GCL 2.6.8 on a Mac.  In future ACL2 releases we will not need this
+; fix if, as we expect, gag-mode is automatically turned off when prover output
+; is inhibited.
+(local (make-event
+        (pprogn (cond ((member-eq 'prove
+                                  (f-get-global 'inhibit-output-lst state))
+                       (set-gag-mode nil))
+                      (t state))
+                (value '(value-triple nil)))))
 
 (local (include-book "arithmetic-5/top" :dir :system))
 

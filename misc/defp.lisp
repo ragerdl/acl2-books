@@ -1,6 +1,8 @@
+; Copyright (C) 2013, Regents of the University of Texas
+; Written by Matt Kaufmann, August, 2007
+; License: A 3-clause BSD license.  See the LICENSE file distributed with ACL2.
+
 ; Enhancement of defpun to allow more than one tail-recursive call.
-; Matt Kaufmann
-; August 2007
 
 ; Notes:
 

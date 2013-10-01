@@ -1,3 +1,22 @@
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "ACL2")
 
@@ -10,6 +29,9 @@
      hons-acons hons-get hut het hqual hons-equal
      hons-assoc-equal make-fal
      definline definlined
+     defxdoc defsection define
+
+     alist-keys alist-vals
 
      qv bfr-and bfr-not bfr-and
      bfr-p bfr-or bfr-xor bfr-iff bfr-ite bfr-eval bfr-eval-list
@@ -130,7 +152,7 @@
      mk-g-number mk-g-boolean mk-g-ite mk-g-concrete
      gobjectp glc glr gl-fnsym gl-interp
      gl-interp-raw gl-interp
-     gl-aside gl-ignore nonnil-symbol-listp env
+     gl-aside gl-ignore nonnil-symbol-listp
 
      xor
      gl-bdd-mode gl-aig-mode gl-mbe
@@ -139,7 +161,24 @@
      b-ior b-and b-xor b-not bfix bitp boolfix
 
      numlist
-     defsection))
+     defsection
+
+     ;; some imports for better xdoc integration
+     hardware-verification
+     proof-automation
+     boolean-reasoning
+     satlink
+     ubdds
+     aig
+     acl2::hons-and-memoization
+     xdoc
+     set-max-mem
+     the-method
+     aignet
+     gl
+
+
+     ))
   '(nat-listp ; included 12/4/2012 by Matt K., for addition to *acl2-exports*
     )))
 

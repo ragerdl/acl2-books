@@ -1,15 +1,30 @@
-
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
-
-
 (include-book "bvecs")
-
 (include-book "tools/bstar" :dir :system)
-(local (in-theory (disable floor)))
 (include-book "ihs/logops-definitions" :dir :system)
 (include-book "centaur/misc/arith-equiv-defs" :dir :system)
 (local (include-book "centaur/bitops/ihsext-basics" :dir :system))
+(local (in-theory (disable floor)))
 
 (defthm consp-bfr-eval-list
   (equal (consp (bfr-eval-list x env))
@@ -37,16 +52,14 @@
          (head (bfr-ite-fn c v11 v01)))
       (bfr-ucons head tail))))
 
-(defthm bfr-max-nat-var-list-of-bfr-ite-bvv-fn
-  (implies (and (<= (bfr-max-nat-var c) n)
-                (<= (bfr-max-nat-var-list v1) n)
-                (<= (bfr-max-nat-var-list v0) n))
-           (<= (bfr-max-nat-var-list
-                (bfr-ite-bvv-fn c v1 v0)) n))
-  :hints(("Goal" :in-theory (e/d (bfr-max-nat-var-list)
-                                 (bfr-max-nat-var (bfr-max-nat-var)
-                                                  (bfr-max-nat-var-list)))))
-  :rule-classes ((:rewrite) (:linear :match-free :all)))
+(defthm pbfr-list-depends-on-of-bfr-ite-bvv-fn
+  (implies (and (not (pbfr-depends-on n p c))
+                (not (pbfr-list-depends-on n p v1))
+                (not (pbfr-list-depends-on n p v0)))
+           (not (pbfr-list-depends-on n p (bfr-ite-bvv-fn c v1 v0))))
+  :hints(("Goal" :in-theory (e/d (pbfr-list-depends-on)
+                                 (pbfr-depends-on (pbfr-depends-on)
+                                                  (pbfr-list-depends-on))))))
 
 (defthm eval-of-bfr-ite-bvv-fn
   (equal (bfr-list->u (bfr-ite-bvv-fn c v1 v0) env)
@@ -113,16 +126,14 @@
         (bfr-scons head rst)))))
 
 
-(defthm bfr-max-nat-var-list-of-bfr-ite-bss-fn
-  (implies (and (<= (bfr-max-nat-var c) n)
-                (<= (bfr-max-nat-var-list v1) n)
-                (<= (bfr-max-nat-var-list v0) n))
-           (<= (bfr-max-nat-var-list
-                (bfr-ite-bss-fn c v1 v0)) n))
-  :hints(("Goal" :in-theory (e/d (bfr-max-nat-var-list)
-                                 (bfr-max-nat-var (bfr-max-nat-var)
-                                                  (bfr-max-nat-var-list)))))
-  :rule-classes ((:rewrite) (:linear :match-free :all)))
+(defthm pbfr-list-depends-on-of-bfr-ite-bss-fn
+  (implies (and (not (pbfr-depends-on n p c))
+                (not (pbfr-list-depends-on n p v1))
+                (not (pbfr-list-depends-on n p v0)))
+           (not (pbfr-list-depends-on n p (bfr-ite-bss-fn c v1 v0))))
+  :hints(("Goal" :in-theory (e/d (pbfr-list-depends-on)
+                                 (pbfr-depends-on (pbfr-depends-on)
+                                                  (pbfr-list-depends-on))))))
 
 
 

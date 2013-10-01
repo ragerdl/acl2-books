@@ -1,78 +1,25 @@
-
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
-
 (include-book "bfr")
-(include-book "gl-doc-string")
-
-(defdoc experimental-aig-reasoning
-  ":Doc-section ACL2::GL
-  Note about GL's experimental AIG reasoning mode.~/
-
-  By default, GL operates on BDD-based data structures and resolves Boolean
-reasoning questions using BDD operations.  However, it also has some support
-for a different mode that uses And-Inverter graphs instead.
-Using AIG mode requires a way to solve Boolean satisfiability problems on AIGs.
-We provide one method, of dubious utility, which is to transform the AIG into a
-BDD.  This mode may be used by including the book \"bfr-aig-bddify\" and then
-running (GL-AIG-BDDIFY-MODE), which is an ACL2 event.  (To return to the
-default BDD-only mode, simply run (GL-BDD-MODE).)  We describe below the
-mechanisms provided for putting GL into different reasoning modes.  These
-mechanisms may be used, by an adventurous user, to attach an external SAT
-solver and use that to solve AIG satisfiability queries, avoiding the necessity
-of the AIG to BDD transformation.  ~/
-
-GL can be put into different modes using ~il[defattach].  There are several
-functions that need to have proper attachments in order for GL to function;
-when the GL library is loaded, they are set up to a default configuration in
-which GL will use BDD-based reasoning.
-
-The functions that need attachments follow.  Here, BFR stands for Boolean
-function representation.
-
- * BFR-MODE: 0-ary with no constraints.  This detemines whether the Boolean
-function components in the symbolic object representation are BDDs or AIGs, and
-thus the functions used to combine them.  E.g., the definition of BFR-NOT
-is (basically):
-
-~bv[]
- (if (bfr-mode) (aig-not x) (q-not x)).
-~ev[]
-
-Similarly, BFR-EVAL either applies EVAL-BDD or AIG-EVAL, depending on BFR-MODE.
-
-By default the function BFR-BDD (which returns NIL) is attached to BFR-MODE,
-and thus BFR-NOT uses the BDD operation Q-NOT.  To use AIGs instead, attach
-BFR-AIG, which returns T.  
-
- * BFR-SAT: Unary, returning three values: SAT, SUCCEEDED, CTREX.  The main
-constraint of BFR-SAT is that if it returns SAT=NIL and SUCCEEDED=T, then
-BFR-EVAL of the input on any environment must be NIL, i.e., the input must be
-an unsatisfiable BDD or AIG (depending on the BFR-MODE.)  The CTREX value
-should be a counterexample in the case of a SAT result, represented either as a
-BDD or an alist mapping variables to Boolean values; see below under
-BFR-COUNTEREX-MODE.
-
-To satisfy the constraint in the BDD case, it suffices to simply check whether
-the input BDD is NIL; if so, it is satisfiable, and otherwise, it isn't.  This
-method is implemented as BFR-SAT-BDD, which is the default attachment of
-BFR-SAT.  For AIG mode, we provide an attachment BFR-SAT-BDDIFY which solves an
-AIG satisfiability query by transforming the input AIG into a BDD.  However,
-one might instead hook up a SAT solver into ACL2 so that it can take an AIG as
-input.  Given a way of calling such an external tool, it would not be difficult
-to produce a function that conforms to the constraint described above. :-)
-
- * BFR-COUNTEREX-MODE: 0-ary, no constraints.  This says whether the
-counterexample value sometimes returned by BFR-SAT is in the form of a BDD or
-an association list.  If it is set up wrong, then output in case of a
-counterexample will be garbled.  In both the default BDD mode and in the AIG
-BDDIFY mode provided, the counterexample is in the form of a BDD, and so we
-attach BFR-COUNTEREX-BDD by default.  However, if an external SAT solver is
-used, then there will likely be a single assignment returned, which might more
-conveniently be provided as an alist.  Then one would instead attach
-BFR-COUNTEREX-ALIST.
-~/
-")
 
 (encapsulate
   (((bfr-sat *) => (mv * * *)))
@@ -112,9 +59,12 @@ BFR-COUNTEREX-ALIST.
           :use ((:instance acl2::eval-bdd-ubdd-fix
                            (x prop))))))
 
+
 (acl2::defattach
  (bfr-sat bfr-sat-bdd
           :hints (("goal" :in-theory '(bfr-sat-bdd-unsat)))))
+
+(in-theory (disable bfr-sat-bdd-unsat bfr-sat-unsat))
 
 
 
@@ -153,3 +103,124 @@ BFR-COUNTEREX-ALIST.
   (if (eq (bfr-counterex-mode) t) ;; alist
       ctrex
     (to-satisfying-assign assign ctrex)))
+
+
+
+
+
+(defund bfr-known-value (x)
+  (declare (xargs :guard t))
+  (bfr-case :bdd (and x t)
+            :aig (acl2::aig-eval x nil)))
+
+
+(defsection bfr-constcheck
+  ;; Bfr-constcheck: use SAT (or examine the BDD) to determine whether x is
+  ;; constant, and if so return that constant.
+  (defund bfr-constcheck (x)
+    (declare (xargs :guard t))
+    (if (bfr-known-value x)
+        (b* (((mv sat ok &) (bfr-sat (bfr-not x))))
+          (if (or sat (not ok))
+              x
+            t))
+      (b* (((mv sat ok &) (bfr-sat x)))
+        (if (or sat (not ok))
+            x
+          nil))))
+
+  (local (in-theory (enable bfr-constcheck)))
+
+  (defthm bfr-eval-of-bfr-constcheck
+    (equal (bfr-eval (bfr-constcheck x) env)
+           (bfr-eval x env))
+    :hints (("goal" :use ((:instance bfr-sat-unsat
+                           (prop x))
+                          (:instance bfr-sat-unsat
+                           (prop (bfr-not x)))))))
+
+  (defthm pbfr-depends-on-of-bfr-constcheck
+    (implies (not (pbfr-depends-on k p x))
+             (not (pbfr-depends-on k p (bfr-constcheck x))))))
+
+(defsection bfr-constcheck-pathcond
+  ;; Bfr-constcheck: use SAT (or examine the BDD) to determine whether x is
+  ;; constant, and if so return that constant.
+  (defund bfr-constcheck-pathcond (x pathcond)
+    (declare (xargs :guard t))
+    (b* (((mv sat ok &) (bfr-sat (bfr-and pathcond x)))
+         ((unless (or sat (not ok)))
+          nil)
+         ((mv sat ok &) (bfr-sat (bfr-and pathcond (bfr-not x))))
+         ((unless (or sat (not ok)))
+          t))
+      x))
+
+  (local (in-theory (enable bfr-constcheck-pathcond)))
+
+  (defthm bfr-eval-of-bfr-constcheck-pathcond
+    (implies (bfr-eval pathcond env)
+             (equal (bfr-eval (bfr-constcheck-pathcond x pathcond) env)
+                    (bfr-eval x env)))
+    :hints (("goal" :use ((:instance bfr-sat-unsat
+                           (prop (bfr-and pathcond x)))
+                          (:instance bfr-sat-unsat
+                           (prop (bfr-and pathcond (bfr-not x))))))))
+
+  (defthm pbfr-depends-on-of-bfr-constcheck-pathcond
+    (implies (not (pbfr-depends-on k p x))
+             (not (pbfr-depends-on k p (bfr-constcheck-pathcond x pathcond))))))
+
+
+(defsection bfr-check-true
+  ;; Bfr-constcheck: use SAT (or examine the BDD) to determine whether x is
+  ;; constant, and if so return that constant.
+  (defund bfr-check-true (x)
+    (declare (xargs :guard t))
+    (if (bfr-known-value x)
+        (b* (((mv sat ok &) (bfr-sat (bfr-not x))))
+          (if (or sat (not ok))
+              x
+            t))
+      x))
+
+  (local (in-theory (enable bfr-check-true)))
+
+  (defthm bfr-eval-of-bfr-check-true
+    (equal (bfr-eval (bfr-check-true x) env)
+           (bfr-eval x env))
+    :hints (("goal" :use ((:instance bfr-sat-unsat
+                           (prop x))
+                          (:instance bfr-sat-unsat
+                           (prop (bfr-not x)))))))
+
+  (defthm pbfr-depends-on-of-bfr-check-true
+    (implies (not (pbfr-depends-on k p x))
+             (not (pbfr-depends-on k p (bfr-check-true x))))))
+
+(defsection bfr-check-false
+  ;; Bfr-constcheck: use SAT (or examine the BDD) to determine whether x is
+  ;; constant, and if so return that constant.
+  (defund bfr-check-false (x)
+    (declare (xargs :guard t))
+    (if (bfr-known-value x)
+        x
+      (b* (((mv sat ok &) (bfr-sat x)))
+        (if (or sat (not ok))
+            x
+          nil))))
+
+  (local (in-theory (enable bfr-check-false)))
+
+  (defthm bfr-eval-of-bfr-check-false
+    (equal (bfr-eval (bfr-check-false x) env)
+           (bfr-eval x env))
+    :hints (("goal" :use ((:instance bfr-sat-unsat
+                           (prop x))
+                          (:instance bfr-sat-unsat
+                           (prop (bfr-not x)))))))
+
+  (defthm pbfr-depends-on-of-bfr-check-false
+    (implies (not (pbfr-depends-on k p x))
+             (not (pbfr-depends-on k p (bfr-check-false x))))))
+

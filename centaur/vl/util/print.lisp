@@ -170,8 +170,8 @@ we just printed a newline</i>, etc.</p>"
   :short "Fixed version of ACL2's @(see acl2::print-base-p) function that
 returns a Boolean."
   :long "<p>ACL2's built-in version of this just calls @(see member) and hence
-can return a non-Boolean.  That makes it incompatible with @(see stobj) field
-@('satisfies') types, so we have to introduce our own version.</p>"
+can return a non-Boolean.  That makes it incompatible with @(see acl2::stobj)
+field @('satisfies') types, so we have to introduce our own version.</p>"
   (if (acl2::print-base-p x)
       t
     nil))
@@ -910,9 +910,10 @@ top-level) for a workaround.</p>"
   :parents (basic-printing)
   :short "Print to standard-out using @(see ps)"
 
-  :long "<p>@('(vl-cw-ps-seq ...)') expands to @('(cw-unformatted (@(see
-with-local-ps) ...))').  Due to the use of @(see with-local-ps), this macro can
-only be used within functions, and cannot be called from the top level.</p>"
+  :long "<p>@('(vl-cw-ps-seq ...)') expands to
+@('(cw-unformatted (with-local-ps ...))').  Due to the use of @(see
+with-local-ps), this macro can only be used within functions, and cannot be
+called from the top level.</p>"
 
   (defmacro vl-cw-ps-seq (&rest args)
     `(cw-unformatted (with-local-ps ,@args))))
@@ -1662,7 +1663,7 @@ eventually extend the printer to allow them.</p>")
               (= xl (length x)))
   :returns (mv (col-prime natp :rule-classes :type-prescription)
                (acc-prime))
-  :parents (vl-stupid-ppr1)
+  :parents (vl-basic-fmt)
   :short "This is basically like acl2::prin1-with-slashes, but we put the
 characters into the accumulator in reverse order instead of printing them."
   :measure (nfix (- (nfix xl) (nfix n)))
@@ -1704,6 +1705,7 @@ characters into the accumulator in reverse order instead of printing them."
 
 
 (defsection vl-ppr-explode-symbol-aux
+  :parents (vl-basic-fmt)
 
   (local (in-theory (disable acl2::may-need-slashes-fn)))
 
@@ -1745,6 +1747,7 @@ characters into the accumulator in reverse order instead of printing them."
 
 
 (defsection vl-ppr-explode-symbol
+  :parents (vl-basic-fmt)
 
   (defund vl-ppr-explode-symbol (x pkg col acc)
     "Returns (MV COL-PRIME ACC-PRIME)"
@@ -1794,6 +1797,7 @@ characters into the accumulator in reverse order instead of printing them."
 
 
 (defsection vl-ppr-explode-string
+  :parents (vl-basic-fmt)
 
   (defund vl-ppr-explode-string (x col acc)
     "Returns (MV COL-PRIME ACC-PRIME)"
@@ -1827,6 +1831,7 @@ characters into the accumulator in reverse order instead of printing them."
 
 
 (defsection vl-ppr-explode-atom
+  :parents (vl-basic-fmt)
 
   (defund vl-ppr-explode-atom (x pkg base col acc)
     "Returns (MV COL-PRIME ACC-PRIME)"
@@ -1882,6 +1887,7 @@ characters into the accumulator in reverse order instead of printing them."
 
 
 (defsection vl-stupid-ppr1
+  :parents (vl-basic-fmt)
 
   (defund vl-stupid-ppr1 (x pkg base rmargin in-listp col acc)
     "Returns (MV COL-PRIME ACC-PRIME)"
@@ -1958,6 +1964,7 @@ characters into the accumulator in reverse order instead of printing them."
 
 
 (defsection vl-skip-ws
+  :parents (vl-basic-fmt)
 
 ; X is the string we are parsing and XL is its length.  N is our current
 ; position.  We return the index of the first non-whitespace character at or
@@ -1998,6 +2005,7 @@ characters into the accumulator in reverse order instead of printing them."
 
 
 (defsection vl-basic-fmt-parse-tilde
+  :parents (vl-basic-fmt)
 
   (local (in-theory (enable len)))
 
@@ -2086,6 +2094,7 @@ characters into the accumulator in reverse order instead of printing them."
                   (true-listp x))))
 
 (define vl-fmt-tilde-x (x &key (ps 'ps))
+  :parents (vl-basic-fmt)
   (b* ((rchars  (vl-ps->rchars))
        (col     (vl-ps->col))
        (pkg     (vl-ps->package))
@@ -2113,12 +2122,14 @@ characters into the accumulator in reverse order instead of printing them."
        (vl-ps-update-rchars rchars))))
 
 (define vl-fmt-tilde-s (x &key (ps 'ps))
+  :parents (vl-basic-fmt)
   (cond ((stringp x)
          (vl-print x))
         (t
          (vl-fmt-tilde-x x))))
 
 (define vl-fmt-tilde-& (x &key (ps 'ps))
+  :parents (vl-basic-fmt)
   (if (atom x)
       ps
     (vl-ps-seq
@@ -2155,6 +2166,8 @@ characters into the accumulator in reverse order instead of printing them."
 
 
 (define vl-fmt-print-space (&key (ps 'ps))
+  :parents (vl-basic-fmt)
+
   ;; Prints spaces encountered in the format string itself, maybe word-wrapping
   ;; if necessary.
   (if (vl-ps->htmlp)
@@ -2176,6 +2189,7 @@ characters into the accumulator in reverse order instead of printing them."
          (vl-ps-update-col indent)))))
 
 (define vl-fmt-print-normal ((x :type character) &key (ps 'ps))
+  :parents (vl-basic-fmt)
   (cond ((eql x #\-)
          (vl-println? x))
         ((eql x #\Space)
@@ -2184,6 +2198,7 @@ characters into the accumulator in reverse order instead of printing them."
          (vl-print x))))
 
 (defsection vl-basic-fmt-aux-fn
+  :parents (vl-basic-fmt)
 
   (defmacro vl-basic-fmt-aux (x n xl alist)
     `(vl-basic-fmt-aux-fn ,x ,n ,xl ,alist ps))

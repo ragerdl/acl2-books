@@ -28,7 +28,10 @@
 (include-book "xdoc/top" :dir :system)
 
 (defxdoc ubdds
-  :short "A BDD package implemented with @(see hons-and-memoization)."
+  :parents (boolean-reasoning)
+  :short "A @(see hons)-based, unlabeled <a
+href='http://en.wikipedia.org/wiki/Binary_decision_diagram'>Binary Decision
+Diagram</a> (bdd) representation of Boolean functions."
 
   :long "<p>UBDDs (\"unlabeled bdds\") are a concise and efficient
 implementation of binary decision diagrams.  Unlike most BDD packages, our

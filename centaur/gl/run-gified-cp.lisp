@@ -1,6 +1,24 @@
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
-
 (include-book "bfr")
 (include-book "gobjectp")
 (include-book "gtypes")
@@ -14,6 +32,7 @@
 (local (include-book "std/lists/take" :dir :system))
 (local (include-book "gtype-thms"))
 (local (include-book "arithmetic/top-with-meta" :dir :system))
+(local (include-book "centaur/misc/arith-equivs" :dir :system))
 
 (local (defun before-run-gified-ev-tag () nil))
 
@@ -37,13 +56,13 @@
    (symbolp x)
    (pairlis$ a b)
    (cons a b)
+   (atom a)
    (binary-+ a b)
    (hide a)
    (mv-nth n x)
    (mv-list n x)
    (acl2::return-last a b c)
    (force x)
-   (gobj-listp x)
    (bfr-eval x env)
    (acl2::typespec-check ts x)
    (iff a b)
@@ -128,9 +147,9 @@
 
 (defun run-gified-lhs-and-okp-breakdown (lhs okp)
   (case-match okp
-    (('mv-nth ''0 (acl2::fn . '(fn actuals hyp clk state)))
+    (('mv-nth ''0 (acl2::fn . '(fn actuals hyp clk config bvar-db state)))
      (case-match lhs
-       ((ev ('mv-nth ''1 (!fn . '(fn actuals hyp clk state))) 'env)
+       ((ev ('mv-nth ''1 (!fn . '(fn actuals hyp clk config bvar-db state))) 'env)
         (mv nil ev acl2::fn))
        (& (mv "lhs mismatched" nil nil))))
     (& (mv "okp mismatched" nil nil))))
@@ -141,30 +160,30 @@
      (run-gified-lhs-and-okp-breakdown lhs okp)
      (implies (not erp)
               (and (equal lhs
-                          `(,geval (mv-nth '1 (,run-gified fn actuals hyp clk state))
+                          `(,geval (mv-nth '1 (,run-gified fn actuals hyp clk config bvar-db state))
                                    env))
                    (equal okp
-                          `(mv-nth '0 (,run-gified fn actuals hyp clk state))))))
+                          `(mv-nth '0 (,run-gified fn actuals hyp clk config bvar-db state))))))
    :rule-classes :forward-chaining))
 
 (in-theory (disable run-gified-lhs-and-okp-breakdown))
 
-(defun run-gified-rhs-breakdown (rhs acl2::geval-fn)
+(defun run-gified-rhs-breakdown (rhs)
   (case-match rhs
     ((ev ('cons 'fn
                 ('acl2::kwote-lst
-                 (!geval-fn . '(actuals env))))
+                 (geval-list . '(actuals env))))
          . '('nil))
-     (mv nil ev))
-    (& (mv "rhs mismatched" nil))))
+     (mv nil ev geval-list))
+    (& (mv "rhs mismatched" nil nil))))
 
 (local
  (defthm run-gified-rhs-breakdown-correct
-   (mv-let (erp evfn)
-     (run-gified-rhs-breakdown rhs geval-fn)
+   (mv-let (erp evfn geval-list)
+     (run-gified-rhs-breakdown rhs)
      (implies (not erp)
               (equal rhs
-                     `(,evfn (cons fn (acl2::kwote-lst (,geval-fn actuals env)))
+                     `(,evfn (cons fn (acl2::kwote-lst (,geval-list actuals env)))
                              'nil))))
    :rule-classes :forward-chaining))
 
@@ -211,7 +230,7 @@
         (& (mv (acl2::msg "bad gl-function-info table entry: ~x0" entry) nil))))))
 
 (in-theory (disable geval-rule-alist))
-             
+
 
 
 (defun run-gified-case-breakdown (body)
@@ -281,14 +300,14 @@
       ('equal (the-geval (!gfn . gformals) . '(env))
               (!fn . evals)))
      (let ((nformals (len gformals)))
-       (if (<= 2 nformals)
-           (let ((formals (take (- nformals 2) gformals)))
+       (if (<= 5 nformals)
+           (let ((formals (take (- nformals 5) gformals)))
              (if (and (equal the-geval geval)
                       (evals-of-formalsp formals evals geval 'env)
                       (nonnil-symbol-listp gformals)
                       (acl2::fast-no-duplicatesp gformals)
                       (not (member 'env gformals))
-                      (equal (nthcdr (- nformals 2) gformals) '(hyp clk)))
+                      (equal (nthcdr (- nformals 5) gformals) '(hyp clk config bvar-db state)))
                  (mv nil gformals)
                (mv (acl2::msg "Malformed geval theorem: ~x0" thm) nil)))
          (mv (acl2::msg "Malformed geval theorem: ~x0" thm) nil))))
@@ -315,19 +334,19 @@
 ;  (defthmd member-is-member-equal
 ;    (equal (member x y)
 ;           (member-equal x y))))
-; 
-; (local (in-theory (enable member-is-member-equal)))  
+;
+; (local (in-theory (enable member-is-member-equal)))
 
 (local
  (defthm run-gified-check-geval-thm-formals
    (mv-let (erp formals)
      (run-gified-check-geval-thm thm gfn fn geval)
      (implies (not erp)
-              (and (<= 2 (len formals))
+              (and (<= 5 (len formals))
                    (nonnil-symbol-listp formals)
                    (no-duplicatesp-equal formals)
                    (not (member-equal 'env formals))
-                   (equal (nthcdr (+ -2 (len formals)) formals) '(hyp clk)))))
+                   (equal (nthcdr (+ -5 (len formals)) formals) '(hyp clk config bvar-db state)))))
    :rule-classes nil))
 
 (local
@@ -339,7 +358,7 @@
                      `(implies (bfr-eval hyp (car env))
                                (equal (,geval (,gfn . ,formals) env)
                                       (,fn . ,(make-evals-of-formals
-                                               (take (- (len formals) 2)
+                                               (take (- (len formals) 5)
                                                      formals)
                                                geval 'env)))))))
    :rule-classes :forward-chaining))
@@ -356,7 +375,7 @@
 (local
  (defthm nthcdr-nil
    (equal (nthcdr n nil) nil)))
-   
+
 (local
  (defthm nth-of-nthcdr
    (equal (nth n (nthcdr m y))
@@ -372,7 +391,7 @@
 ;;     :hints (("goal" :induct (nthcdr n x)))))
 
 
-           
+
 
 (local
  (encapsulate nil
@@ -478,7 +497,7 @@
      :hints (("goal" :induct (replace-term-flg flag new old avoid x))
              (and stable-under-simplificationp
                   '(:in-theory (enable equality-cp-ev-constraint-0)))))
-  
+
    (in-theory (disable replace-term replace-term-list))
 
    (defthm replace-term-list-correct-disjoin
@@ -550,12 +569,12 @@
  (defthm run-gified-check-geval-thm-correct
    (mv-let (erp formals)
      (run-gified-check-geval-thm thm gfn fn geval)
-     (let ((hyp (run-gified-ev (nth (+ -2 (len formals)) args)
+     (let ((hyp (run-gified-ev (nth (+ -5 (len formals)) args)
                                a))
            (env (cdr (assoc-equal 'env a))))
        (implies (and (not erp)
                      (run-gified-ev
-                      thm 
+                      thm
                       (cons (cons 'env (cdr (assoc-equal 'env a)))
                             (pairlis$ formals (run-gified-ev-lst args a))))
                      (not (eq geval 'quote))
@@ -568,23 +587,23 @@
                         a)
                        (run-gified-ev
                         `(,fn . ,(make-evals-of-formals
-                                  (take (- (len formals) 2)
+                                  (take (- (len formals) 5)
                                         args)
                                   geval 'env))
                         a)))))
    :hints(("Goal"
            :in-theory (e/d () ;; equal-nthcdr-cons
-                           (nth-of-nthcdr assoc-equal-pairlis-nth
+                           (nth-of-nthcdr acl2::car-nthcdr assoc-equal-pairlis-nth
                                           run-gified-check-geval-thm))
            :use ((:instance run-gified-check-geval-thm-form)
                  (:instance run-gified-check-geval-thm-formals)
                  (:instance
                   nth-of-nthcdr
-                  (n 0) (m (+ -2 (len args)))
+                  (n 0) (m (+ -5 (len args)))
                   (y (mv-nth 1 (run-gified-check-geval-thm thm gfn fn geval))))
                  (:instance
                   assoc-equal-pairlis-nth
-                  (n (- (len args) 2))
+                  (n (- (len args) 5))
                   (keys (mv-nth 1 (run-gified-check-geval-thm thm gfn fn geval)))
                   (vals (run-gified-ev-lst args a)))))
           (and stable-under-simplificationp
@@ -623,7 +642,7 @@
  (defthm run-gified-get-geval-thm-correct
    (mv-let (erp thm formals)
      (run-gified-get-geval-thm gfn fn geval-alist geval)
-     (let ((hyp (run-gified-ev (nth (+ -2 (len formals)) args) a))
+     (let ((hyp (run-gified-ev (nth (+ -5 (len formals)) args) a))
            (env (cdr (assoc-equal 'env a))))
        (implies
         (and (not erp)
@@ -637,7 +656,7 @@
                               a)
                (run-gified-ev `(,fn
                                 . ,(make-evals-of-formals
-                                    (take (- (len formals) 2) args) geval 'env))
+                                    (take (- (len formals) 5) args) geval 'env))
                               a)))))
    :hints(("Goal" :in-theory (e/d (use-by-hint) ())
            :use ((:instance run-gified-ev-falsify
@@ -654,7 +673,7 @@
  (defthm run-gified-get-geval-thm-correct-corollary
    (mv-let (erp thm formals)
      (run-gified-get-geval-thm gfn fn geval-alist geval)
-     (let ((hyp (run-gified-ev (nth (+ -2 (len formals)) args) a))
+     (let ((hyp (run-gified-ev (nth (+ -5 (len formals)) args) a))
            (env (cdr (assoc-equal 'env a))))
        (implies
         (and (not erp)
@@ -677,7 +696,7 @@
                               nil)
                (run-gified-ev `(,fn
                                 . ,(make-evals-of-formals
-                                    (take (- (len formals) 2) args) geval 'env))
+                                    (take (- (len formals) 5) args) geval 'env))
                               a)))))
    :hints(("Goal" :in-theory (e/d (run-gified-ev-constraint-0)
                                   (run-gified-get-geval-thm-correct))
@@ -727,9 +746,9 @@
             :in-theory (disable ev-function-clause-correct-for-run-gified-ev)))))
 
 (in-theory (disable run-gified-get-eval-thm))
-               
-             
-                  
+
+
+
 (defun nths-matching-formalsp (acl2::idx formals acl2::varname list)
   (declare (xargs :measure (acl2-count formals)))
   (if (atom formals)
@@ -758,10 +777,10 @@
 
 
 (in-theory (disable nths-matching-formalsp))
-    
 
 
-                       
+
+
 
 
 
@@ -794,34 +813,42 @@
 
 
 
-(defun geval-car-cdr-of-gobj-listp-thm (geval rune)
-  `((not (use-by-hint ',rune))
-    (not (gobj-listp x))
-    (if (equal (car (,geval x env))
-               (,geval (car x) env))
-        (equal (cdr (,geval x env))
-               (,geval (cdr x) env))
-      'nil)))
+(defun geval-list-def-thm (geval-list geval)
+  `((not (use-by-hint ',geval-list))
+    (equal (,geval-list x env)
+           (if (atom x)
+               'nil
+             (cons (,geval (car x) env)
+                   (,geval-list (cdr x) env))))))
 
 (local
- (defthm geval-car-cdr-of-gobj-listp-thm-correct
+ (defthm geval-list-def-thm-correct
    (implies (and (run-gified-ev-theoremp
-                  (disjoin (geval-car-cdr-of-gobj-listp-thm
-                            geval rune)))
+                  (disjoin (geval-list-def-thm
+                            geval-list geval)))
                  ;;    (gobjectp (run-gified-ev x a))
                  ;;                 (or (atom (run-gified-ev x a))
                  ;;                     (gobjectp (car (run-gified-ev x a))))
-                 (gobj-listp (run-gified-ev x a))
-                 (not (equal geval 'quote)))
-            (and (equal (car (run-gified-ev (list geval x env) a))
-                        (run-gified-ev (list geval `(car ,x) env) a))
-                 (equal (cdr (run-gified-ev (list geval x env) a))
-                        (run-gified-ev (list geval `(cdr ,x) env) a))))
+                 (not (equal geval 'quote))
+                 (not (equal geval-list 'quote)))
+            (and (implies (atom (run-gified-ev x a))
+                          (equal (run-gified-ev (list geval-list x env) a)
+                                 nil))
+                 (implies (consp (run-gified-ev x a))
+                          (equal (run-gified-ev (list geval-list x env) a)
+                                 (cons (run-gified-ev (list geval
+                                                            (kwote (car (run-gified-ev x a)))
+                                                            (kwote (run-gified-ev env a)))
+                                                      nil)
+                                       (run-gified-ev (list geval-list
+                                                            (kwote (cdr (run-gified-ev x a)))
+                                                            (kwote (run-gified-ev env a)))
+                                                      nil))))))
    :hints(("Goal" :in-theory (enable use-by-hint run-gified-ev-constraint-0
-                                     geval-car-cdr-of-gobj-listp-thm)
+                                     geval-list-def-thm)
            :use ((:instance run-gified-ev-falsify
-                            (x (disjoin (geval-car-cdr-of-gobj-listp-thm
-                                         geval rune)))
+                            (x (disjoin (geval-list-def-thm
+                                         geval-list geval)))
                             (a `((x . ,(run-gified-ev x a))
                                  (env . ,(run-gified-ev env a))))))))))
 
@@ -830,12 +857,12 @@
 ;;                 (natp n) (< 0 n))
 ;;            (or (atom x) (gobjectp (car x))))
 ;;   :rule-classes nil)
-           
 
 
-;; (defthm geval-car-cdr-of-gobj-listp-thm-correct-corollary
+
+;; (defthm geval-geval-list-def-thm-correct-corollary
 ;;   (implies (and (run-gified-ev-theoremp
-;;                  (disjoin (geval-car-cdr-of-gobj-listp-thm
+;;                  (disjoin (geval-geval-list-def-thm
 ;;                            geval rune)))
 ;;                 (gobjectp (run-gified-ev x a))
 ;;                 (gobj-listp (acl2::simple-take n (run-gified-ev x a)))
@@ -845,17 +872,17 @@
 ;;                        (run-gified-ev (list geval `(car ,x) env) a))
 ;;                 (equal (cdr (run-gified-ev (list geval x env) a))
 ;;                        (run-gified-ev (list geval `(cdr ,x) env) a))))
-;;   :hints(("Goal" :use (geval-car-cdr-of-gobj-listp-thm-correct
+;;   :hints(("Goal" :use (geval-geval-list-def-thm-correct
 ;;                        (:instance gobj-listp-simple-take-implies
 ;;                                   (x (run-gified-ev x a))))
-;;           :in-theory (disable geval-car-cdr-of-gobj-listp-thm
-;;                               geval-car-cdr-of-gobj-listp-thm-correct)
+;;           :in-theory (disable geval-geval-list-def-thm
+;;                               geval-geval-list-def-thm-correct)
 ;;           :do-not-induct t))
 ;;   :rule-classes ((:rewrite :backchain-limit-lst (0 nil 0 nil nil nil))))
 
-;; (defthm geval-car-cdr-of-gobj-listp-thm-correct-corollary2
+;; (defthm geval-geval-list-def-thm-correct-corollary2
 ;;   (implies (and (run-gified-ev-theoremp
-;;                  (disjoin (geval-car-cdr-of-gobj-listp-thm
+;;                  (disjoin (geval-geval-list-def-thm
 ;;                            geval rune)))
 ;;                 (gobj-listp (run-gified-ev x a))
 ;;                 (not (equal geval 'quote)))
@@ -863,41 +890,41 @@
 ;;                        (run-gified-ev (list geval `(car ,x) env) a))
 ;;                 (equal (cdr (run-gified-ev (list geval x env) a))
 ;;                        (run-gified-ev (list geval `(cdr ,x) env) a))))
-;;   :hints(("Goal" :use geval-car-cdr-of-gobj-listp-thm-correct
+;;   :hints(("Goal" :use geval-geval-list-def-thm-correct
 ;;           :in-theory (e/d (gobj-listp-impl-gobjectp)
-;;                           (geval-car-cdr-of-gobj-listp-thm
-;;                            geval-car-cdr-of-gobj-listp-thm-correct))
+;;                           (geval-geval-list-def-thm
+;;                            geval-geval-list-def-thm-correct))
 ;;           :do-not-induct t))
 ;;   :rule-classes ((:rewrite :backchain-limit-lst (0 1 nil))))
 
-(defun geval-consp-when-gobj-listp-thm (geval rune)
-  `((not (use-by-hint ',rune))
-    ;; (not (gobjectp x))
-;;     (not (if (consp x)
-;;              (gobjectp (car x))
-;;            't))
-    (not (gobj-listp x))
-    (equal (consp (,geval x env))
-           (consp x))))
+;; (defun geval-consp-when-gobj-listp-thm (geval rune)
+;;   `((not (use-by-hint ',rune))
+;;     ;; (not (gobjectp x))
+;; ;;     (not (if (consp x)
+;; ;;              (gobjectp (car x))
+;; ;;            't))
+;;     (not (gobj-listp x))
+;;     (equal (consp (,geval x env))
+;;            (consp x))))
 
-(local
- (defthm geval-consp-when-gobj-listp-thm-correct
-   (implies (and (run-gified-ev-theoremp
-                  (disjoin (geval-consp-when-gobj-listp-thm
-                            geval rune)))
-                 ;; (gobjectp (run-gified-ev x a))
-                 ;;                 (or (atom (run-gified-ev x a))
-                 ;;                     (gobjectp (car (run-gified-ev x a))))
-                 (gobj-listp (run-gified-ev x a))
-                 (not (equal geval 'quote)))
-            (equal (consp (run-gified-ev (list geval x env) a))
-                   (consp (run-gified-ev x a))))
-   :hints(("Goal" :in-theory (enable use-by-hint run-gified-ev-constraint-0)
-           :use ((:instance run-gified-ev-falsify
-                            (x (disjoin (geval-consp-when-gobj-listp-thm
-                                         geval rune)))
-                            (a `((x . ,(run-gified-ev x a))
-                                 (env . ,(run-gified-ev env a))))))))))
+;; (local
+;;  (defthm geval-consp-when-gobj-listp-thm-correct
+;;    (implies (and (run-gified-ev-theoremp
+;;                   (disjoin (geval-consp-when-gobj-listp-thm
+;;                             geval rune)))
+;;                  ;; (gobjectp (run-gified-ev x a))
+;;                  ;;                 (or (atom (run-gified-ev x a))
+;;                  ;;                     (gobjectp (car (run-gified-ev x a))))
+;;                  (gobj-listp (run-gified-ev x a))
+;;                  (not (equal geval 'quote)))
+;;             (equal (consp (run-gified-ev (list geval x env) a))
+;;                    (consp (run-gified-ev x a))))
+;;    :hints(("Goal" :in-theory (enable use-by-hint run-gified-ev-constraint-0)
+;;            :use ((:instance run-gified-ev-falsify
+;;                             (x (disjoin (geval-consp-when-gobj-listp-thm
+;;                                          geval rune)))
+;;                             (a `((x . ,(run-gified-ev x a))
+;;                                  (env . ,(run-gified-ev env a))))))))))
 
 ;; (defthm geval-consp-when-gobj-listp-thm-correct-corollary
 ;;   (implies (and (run-gified-ev-theoremp
@@ -951,8 +978,7 @@
                             (a `((env . ,(run-gified-ev env a))))))))))
 
 
-(in-theory (disable geval-consp-when-gobj-listp-thm
-                    geval-car-cdr-of-gobj-listp-thm
+(in-theory (disable geval-list-def-thm
                     geval-of-nil-thm))
 
 (local
@@ -965,7 +991,7 @@
    (defun make-n-cdrs (n term)
      (if (zp n)
          term
-       (list 'cdr (make-n-cdrs (1- n) term))))
+       (make-n-cdrs (1- n) (list 'cdr term))))
 
 
    (local (defthm cdr-nthcdr
@@ -986,7 +1012,7 @@
                                 `((args . ,args) (a . ,a))
                                 'acl2::? nil mfc state)
                  args)))
-                 
+
 
    (defthmd my-run-gified-ev-constraint-0
      (implies (and (syntaxp (test-constraint-0-result args a mfc state))
@@ -1006,12 +1032,13 @@
      (implies (and (gobj-listp lst)
                    (nthcdr n lst))
               (consp (nthcdr n lst)))
-     :hints(("Goal" :in-theory (enable gobj-listp))))
+     :hints(("Goal" :in-theory (e/d (gobj-listp)))))
 
    (defthm gobj-listp-nthcdr
      (implies (gobj-listp lst)
               (gobj-listp (nthcdr n lst)))
-     :hints(("Goal" :in-theory (enable gobj-listp))))
+     :hints(("Goal" :in-theory (e/d (gobj-listp)
+                                    (cdr-nthcdr)))))
 
    (defthm gobj-listp-take
      (implies (gobj-listp gobj)
@@ -1048,63 +1075,51 @@
               (equal (cdr x) nil))
      :rule-classes ((:rewrite :backchain-limit-lst 0)))
 
+   (defthm nthcdr-when-not-consp
+     (implies (and (not (consp x))
+                   (not (zp n)))
+              (equal (nthcdr n x) nil)))
 
-   (defthm nthcdr-run-gified-of-geval
+   (defthm nthcdr-of-cons
+     (implies (not (zp n))
+              (equal (nthcdr n (cons a b))
+                     (nthcdr (+ -1 n) b))))
+
+   (defthm nthcdr-run-gified-of-geval-list
      (implies (and (run-gified-ev-theoremp
-                    (disjoin (geval-consp-when-gobj-listp-thm
-                              gevalfn geval-consp)))
-                   (run-gified-ev-theoremp
-                    (disjoin (geval-car-cdr-of-gobj-listp-thm
-                              gevalfn geval-car-cdr)))
-                   (not (equal gevalfn 'quote))
-                   (gobj-listp (run-gified-ev args a))
+                    (disjoin (geval-list-def-thm
+                              geval-list geval)))
+                   (not (equal geval 'quote))
+                   (not (equal geval-list 'quote))
                    ;; (acl2::take n (run-gified-ev args a))
                    )
               (equal
-               (nthcdr n (run-gified-ev (list gevalfn args env) a))
-               (run-gified-ev (list gevalfn (make-n-cdrs n args) env) a)))
-     :hints(("Goal" :in-theory (e/d (my-run-gified-ev-constraint-0) (nthcdr nth))
-             :induct (make-n-cdrs n args))
-            (and stable-under-simplificationp
-                 (cond
-                  ((member-equal '(zp n) clause)
-                   '(:use ((:instance geval-car-cdr-of-gobj-listp-thm-correct
-                                      (geval gevalfn)
-                                      (x (list 'quote (run-gified-ev args a)))
-                                      (env (list 'quote (run-gified-ev env a)))
-                                      (a nil)
-                                      (rune geval-car-cdr))
-                           (:instance geval-car-cdr-of-gobj-listp-thm-correct
-                                      (geval gevalfn)
-                                      (x (list 'quote
-                                               (nthcdr (+ -1 n)
-                                                       (run-gified-ev args a))))
-                                      (env (list 'quote (run-gified-ev env a)))
-                                      (a nil)
-                                      (rune geval-car-cdr)))
-                          :in-theory (e/d (my-run-gified-ev-constraint-0)
-                                          (geval-car-cdr-of-gobj-listp-thm-correct
-                                           nthcdr nth))))
-                  ((member-equal '(not (zp n)) clause)
-                   '(:in-theory (e/d (nthcdr) (nth))))))))
+               (nthcdr n (run-gified-ev (list geval-list args env) a))
+               (run-gified-ev (list geval-list (make-n-cdrs n args) env) a)))
+     :hints(("Goal" :in-theory (e/d (my-run-gified-ev-constraint-0)
+                                    (nthcdr nth))
+             :induct (make-n-cdrs n args)
+             :expand ((:free (x) (nthcdr 0 x))))))
 
 
    (defthm nth-run-gified-of-geval
      (implies (and (run-gified-ev-theoremp
-                    (disjoin (geval-consp-when-gobj-listp-thm
-                              gevalfn geval-consp)))
+                    (disjoin (geval-list-def-thm
+                              geval-list geval)))
                    (run-gified-ev-theoremp
-                    (disjoin (geval-car-cdr-of-gobj-listp-thm
-                              gevalfn geval-car-cdr)))
-                   (not (equal gevalfn 'quote))
-                   (gobj-listp (run-gified-ev args a)))
+                    (disjoin (geval-of-nil-thm
+                              geval geval-nil)))
+                   (not (equal geval 'quote))
+                   (not (equal geval-list 'quote)))
               (equal
-               (nth n (run-gified-ev (list gevalfn args env) a))
-               (run-gified-ev (list gevalfn (list 'car (make-n-cdrs n args)) env) a)))
+               (nth n (run-gified-ev (list geval-list args env) a))
+               (run-gified-ev (list geval (list 'car (make-n-cdrs n args)) env) a)))
      :hints(("Goal" :use ((:instance
                            car-nthcdr
                            (a (run-gified-ev (list gevalfn args env) a))))
-             :in-theory (disable car-nthcdr))))
+             :in-theory (e/d (run-gified-ev-constraint-0)
+                             (car-nthcdr acl2::car-nthcdr))
+             :cases ((consp (run-gified-ev args a))))))
 
    (defthm run-gified-ev-lst-kwote-lst
      (equal (run-gified-ev-lst (acl2::kwote-lst x) a)
@@ -1170,25 +1185,21 @@
                (run-gified-ev-theoremp
                 (disjoin (acl2::ev-lookup-var-clause evalfn var-name)))
                (run-gified-ev-theoremp
-                (disjoin (geval-consp-when-gobj-listp-thm
-                          gevalfn geval-consp)))
+                (disjoin (geval-list-def-thm
+                          geval-list gevalfn)))
                (run-gified-ev-theoremp
                 (disjoin (geval-of-nil-thm
                           gevalfn geval-nil)))
-               (run-gified-ev-theoremp
-                (disjoin (geval-car-cdr-of-gobj-listp-thm
-                          gevalfn geval-car-cdr)))
                (not (equal gevalfn 'quote))
-               (not (equal evalfn 'quote))
-               ;; (gobj-listp (acl2::take n actuals))
-               (gobj-listp actuals))
+               (not (equal geval-list 'quote))
+               (not (equal evalfn 'quote)))
               (equal (run-gified-ev-lst
                       (acl2::ev-apply-arglist-on-result
                        n
                        evalfn
                        (acl2::kwote-lst
                         (run-gified-ev
-                         (list gevalfn
+                         (list geval-list
                                (list 'quote actuals)
                                env)
                          nil))
@@ -1202,9 +1213,9 @@
                          actuals))
                        gevalfn env)
                       nil)))
-     :hints(("Goal" 
+     :hints(("Goal"
              :induct t
-             :in-theory (enable gobj-listp acl2::take-redefinition)
+             :in-theory (enable acl2::take-redefinition)
              :expand ((:free (a b c)
                              (acl2::ev-apply-arglist-on-result
                               n a b c))))
@@ -1242,7 +1253,7 @@
 
    (defthm get-geval-thm-success-impl-len
      (implies (not (mv-nth 0 (run-gified-get-geval-thm gfn fn geval-alist geval)))
-              (<= 2 (len (mv-nth 2 (run-gified-get-geval-thm gfn fn geval-alist
+              (<= 5 (len (mv-nth 2 (run-gified-get-geval-thm gfn fn geval-alist
                                                              geval)))))
      :hints(("Goal" :in-theory (enable run-gified-get-geval-thm
                                        run-gified-check-geval-thm)))
@@ -1271,17 +1282,19 @@
          ((unless (equal (len args) (len formals)))
           (mv "The number of arguments doesn't match." nil))
          ((mv erp eval-thm)
-          (run-gified-get-eval-thm fnname (take (- (len formals) 2) formals)
+          (run-gified-get-eval-thm fnname (take (- (len formals) 5) formals)
                                    evalfn eval-alist))
          ((when erp) (mv erp nil))
-         ((unless (and (nths-matching-formalsp 0 (take (- (len formals) 2) formals)
+         ((unless (and (nths-matching-formalsp 0 (take (- (len formals) 5) formals)
                                                'actuals
-                                               (take (- (len formals) 2) args))
-                       (equal (nthcdr (- (len formals) 2) args) '(hyp clk))))
+                                               (take (- (len formals) 5) args))
+                       (equal (nthcdr (- (len formals) 5) args) '(hyp clk
+                                                                      config
+                                                                      bvar-db state))))
           (mv (acl2::msg "Malformed function args: ~x0" (caddr body))
               nil))
          (clauses (list* geval-thm eval-thm clauses)))
-      (mv nil clauses))))                                  
+      (mv nil clauses))))
 
 #!ACL2
 (progn
@@ -1304,7 +1317,7 @@
     access
     `(b* ,(access-b*-bindings (car args) (car forms) (cdr args))
        ,rest-expr)))
-                     
+
 
 (defun ev-constraint-for-search (lemmas hyp-terms ev-term)
   (if (atom lemmas)
@@ -1320,8 +1333,8 @@
           rune
         (ev-constraint-for-search
          (cdr lemmas) hyp-terms ev-term)))))
-         
-           
+
+
 
 
 (defun ev-constraint-for-fn (ev fn world)
@@ -1331,13 +1344,13 @@
 
 (defmacro ev-constraint-for (ev fn)
   `(ev-constraint-for-fn ',ev ',fn world))
-       
+
 
 (local
  (encapsulate nil
 
    (local
-    (in-theory (disable geval-consp-when-gobj-listp-thm-correct
+    (in-theory (disable
                         cheap-default-car cheap-default-cdr acl2::take-redefinition
                         ev-quote-clause-correct-for-run-gified-ev
                         ev-lookup-var-clause-correct-for-run-gified-ev
@@ -1369,14 +1382,14 @@
                         (:REWRITE RUN-GIFIED-EV-CONSTRAINT-3)
                         (:REWRITE ACL2::SYMBOLP-ASSOC-EQUAL)
                         (:DEFINITION ACL2::LIST-FIX)
-                        (:REWRITE GEVAL-CAR-CDR-OF-GOBJ-LISTP-THM-CORRECT)
+                        (:REWRITE GEVAL-LIST-DEF-THM-CORRECT)
                         (:DEFINITION SYMBOL-LISTP)
                         (:REWRITE CHEAP-DEFAULT-CDR)
                         (:TYPE-PRESCRIPTION SYMBOL-LISTP))))
    (local
     (in-theory (set-difference-theories
                 (current-theory :here)
-                (list (EV-CONSTRAINT-FOR RUN-GIFIED-EV GOBJ-LISTP)
+                (list ; (EV-CONSTRAINT-FOR RUN-GIFIED-EV GOBJ-LISTP)
                       (EV-CONSTRAINT-FOR RUN-GIFIED-EV BFR-EVAL)
                       (EV-CONSTRAINT-FOR RUN-GIFIED-EV FORCE)
                       (EV-CONSTRAINT-FOR RUN-GIFIED-EV MV-LIST)
@@ -1409,26 +1422,23 @@
                      (run-gified-ev-theoremp
                       (disjoin (acl2::ev-lookup-var-clause evalfn var-name)))
                      (run-gified-ev-theoremp
-                      (disjoin (geval-consp-when-gobj-listp-thm
-                                gevalfn geval-consp)))
-                     (run-gified-ev-theoremp
-                      (disjoin (geval-car-cdr-of-gobj-listp-thm
-                                gevalfn geval-car-cdr)))
+                      (disjoin (geval-list-def-thm
+                                geval-list gevalfn)))
                      (run-gified-ev-theoremp
                       (disjoin (geval-of-nil-thm
                                 gevalfn geval-nil)))
                      (not (equal evalfn 'quote))
                      (not (equal gevalfn 'quote))
+                     (not (equal geval-list 'quote))
                      (mv-nth 0 (run-gified-ev body a))
                      (bfr-eval (cdr (assoc-equal 'hyp a))
-                               (cadr (assoc-equal 'env a)))
-                     (gobj-listp (cdr (assoc-equal 'actuals a))))
-                (equal (run-gified-ev 
+                               (cadr (assoc-equal 'env a))))
+                (equal (run-gified-ev
                         `(,gevalfn (mv-nth '1 ,body) env)
                         a)
                        (run-gified-ev
                         `(,evalfn (cons fn (acl2::kwote-lst
-                                            (,gevalfn actuals env)))
+                                            (,geval-list actuals env)))
                                   'nil)
                         a))))
      :hints (("goal" :induct (run-gified-process-body body eval-alist evalfn
@@ -1444,15 +1454,15 @@
                            nth-of-nthcdr
                            (n 0)
                            (y (MV-NTH 3 (RUN-GIFIED-CASE-BREAKDOWN BODY)))
-                           (m (+ -2 (LEN (MV-NTH 3 (RUN-GIFIED-CASE-BREAKDOWN
+                           (m (+ -5 (LEN (MV-NTH 3 (RUN-GIFIED-CASE-BREAKDOWN
                                                     BODY))))))
                           (:instance
                            nths-matching-formalsp-make-nths-matching-formals-ev1
-                           (list (ACL2::TAKE (+ -2
+                           (list (ACL2::TAKE (+ -5
                                                        (LEN (MV-NTH 3 (RUN-GIFIED-CASE-BREAKDOWN BODY))))
                                                     (MV-NTH 3 (RUN-GIFIED-CASE-BREAKDOWN BODY))))
                            (formals (ACL2::TAKE
-                                     (+ -2
+                                     (+ -5
                                         (LEN (MV-NTH 3 (RUN-GIFIED-CASE-BREAKDOWN BODY))))
                                      (MV-NTH
                                       2
@@ -1476,50 +1486,44 @@
                    (run-gified-ev-theoremp
                     (disjoin (acl2::ev-lookup-var-clause evalfn var-name)))
                    (run-gified-ev-theoremp
-                    (disjoin (geval-consp-when-gobj-listp-thm
-                              gevalfn geval-consp)))
-                   (run-gified-ev-theoremp
-                    (disjoin (geval-car-cdr-of-gobj-listp-thm
-                              gevalfn geval-car-cdr)))
+                    (disjoin (geval-list-def-thm
+                              geval-list gevalfn)))
                    (run-gified-ev-theoremp
                     (disjoin (geval-of-nil-thm
                               gevalfn geval-nil)))
                    (not (equal evalfn 'quote))
                    (not (equal gevalfn 'quote))
+                   (not (equal geval-list 'quote))
                    (mv-nth 0 (run-gified-ev body a))
                    (bfr-eval (cdr (assoc-equal 'hyp a))
-                             (cadr (assoc-equal 'env a)))
-                   (gobj-listp (cdr (assoc-equal 'actuals a))))
-              (equal (run-gified-ev 
+                             (cadr (assoc-equal 'env a))))
+              (equal (run-gified-ev
                       (list gevalfn
                             (list 'quote (mv-nth 1 (run-gified-ev body a)))
                             (list 'quote (cdr (assoc-equal 'env a))))
                       nil)
                      (run-gified-ev
                       `(,evalfn (cons fn (acl2::kwote-lst
-                                          (,gevalfn actuals env)))
+                                          (,geval-list actuals env)))
                                 'nil)
                       a))))
    :hints(("Goal" :in-theory (e/d (run-gified-ev-constraint-0)
                                   (run-gified-process-body-correct))
            :use ((:instance run-gified-process-body-correct))))))
-   
 
 
 
 
-(defun run-gified-clause-proc (clause hints state)
+
+(defun run-gified-clause-proc (clause geval-nil state)
   (declare ; (ignore hints)
            (xargs :stobjs state
                   :verify-guards nil))
-  (b* (((list geval-consp geval-car-cdr geval-nil) hints)
-       ((mv ok subst)
+  (b* (((mv ok subst)
         (acl2::simple-one-way-unify-lst
          '((implies
             (if (bfr-eval hyp (car env))
-                (if (gobj-listp actuals)
-                    okp-term
-                  'nil)
+                okp-term
               'nil)
             (equal lhs-term rhs-term)))
          clause nil))
@@ -1527,8 +1531,7 @@
                                    clause)
                         nil state))
        ((unless (and (eq (cdr (assoc-equal 'hyp subst)) 'hyp)
-                     (eq (cdr (assoc-equal 'env subst)) 'env)
-                     (eq (cdr (assoc-equal 'actuals subst)) 'actuals)))
+                     (eq (cdr (assoc-equal 'env subst)) 'env)))
         (mv "Clause variables are different than expected" nil state))
        (lhs (cdr (assoc-equal 'lhs-term subst)))
        (rhs (cdr (assoc-equal 'rhs-term subst)))
@@ -1540,13 +1543,15 @@
         (mv "The geval function is QUOTE which is silly." nil state))
        ((when (equal run-gified-fn 'quote))
         (mv "The run-gified function is QUOTE which is silly." nil state))
-       ((mv erp ev-fn)
-        (run-gified-rhs-breakdown rhs geval-fn))
+       ((mv erp ev-fn geval-list-fn)
+        (run-gified-rhs-breakdown rhs))
+       ((when (eq geval-list-fn 'quote))
+        (mv "The geval-list function is QUOTE which is silly." nil state))
        ((when erp) (mv erp nil state))
        (world (w state))
        (body (acl2::body run-gified-fn nil world))
        (body-clause (function-def-clause run-gified-fn run-gified-fn
-                                         '(fn actuals hyp clk state)
+                                         '(fn actuals hyp clk config bvar-db state)
                                          body))
        ((when (eq ev-fn 'quote))
         (mv "The eval function is QUOTE which is silly."
@@ -1565,8 +1570,7 @@
              ev-fn (cdr (hons-get :quote eval-rule-alist)))
             (acl2::ev-lookup-var-clause
              ev-fn (cdr (hons-get :lookup-var eval-rule-alist)))
-            (geval-consp-when-gobj-listp-thm geval-fn geval-consp)
-            (geval-car-cdr-of-gobj-listp-thm geval-fn geval-car-cdr)
+            (geval-list-def-thm geval-list-fn geval-fn)
             (geval-of-nil-thm geval-fn geval-nil)
             body-clause
             clauses))))
@@ -1581,7 +1585,7 @@
 
 (local
  (encapsulate nil
-   (local 
+   (local
 
     (defun cdr-down2 (a b)
       (if (atom a)
@@ -1616,33 +1620,31 @@
                                                          (acl2::simple-one-way-unify-lst
                                                           template term alist))
                                                  a)))))))))
-
-
 (local
  (defthm run-gified-lhs-and-okp-breakdown-correct-eval
    (mv-let (erp geval run-gified)
      (run-gified-lhs-and-okp-breakdown lhs okp)
      (implies (not erp)
               (and (equal (run-gified-ev lhs a)
-                          (run-gified-ev 
-                           `(,geval (mv-nth '1 (,run-gified fn actuals hyp clk state))
+                          (run-gified-ev
+                           `(,geval (mv-nth '1 (,run-gified fn actuals hyp clk config bvar-db state))
                                     env)
                            a))
                    (equal (run-gified-ev okp a)
                           (run-gified-ev
-                           `(mv-nth '0 (,run-gified fn actuals hyp clk state))
+                           `(mv-nth '0 (,run-gified fn actuals hyp clk config bvar-db state))
                            a)))))
    :hints (("goal" :use run-gified-lhs-and-okp-breakdown-correct
             :in-theory (disable run-gified-lhs-and-okp-breakdown-correct)))))
 
 (local
  (defthm run-gified-rhs-breakdown-correct-eval
-   (mv-let (erp evfn)
-     (run-gified-rhs-breakdown rhs geval-fn)
+   (mv-let (erp evfn geval-list-fn)
+     (run-gified-rhs-breakdown rhs)
      (implies (not erp)
               (equal (run-gified-ev rhs a)
                      (run-gified-ev
-                      `(,evfn (cons fn (acl2::kwote-lst (,geval-fn actuals env)))
+                      `(,evfn (cons fn (acl2::kwote-lst (,geval-list-fn actuals env)))
                               'nil)
                       a))))))
 
@@ -1654,7 +1656,7 @@
  (in-theory (disable acl2::ev-collect-apply-lemmas body table-alist w)))
 
 (local (in-theory (disable run-gified-process-body assoc-equal)))
-
+(local (in-theory (disable SIMPLE-ONE-WAY-UNIFY-LST-WITH-RUN-GIFIED-EV)))
 (defthm run-gified-clause-proc-correct
   (implies (and (pseudo-term-listp clause)
                 (alistp a)
@@ -1688,9 +1690,11 @@
                                . run-gified-fn))))
                   '(:clause-processor
                     (acl2::simple-generalize-cp
-                     clause '(((MV-NTH '1 (RUN-GIFIED-RHS-BREAKDOWN
-                                           RHS GEVAL-FN)) . evalfn)
-                              
+                     clause '(((MV-NTH '1 (RUN-GIFIED-RHS-BREAKDOWN RHS))
+                               . evalfn)
+                              ((MV-NTH '2 (RUN-GIFIED-RHS-BREAKDOWN RHS))
+                               . geval-list-fn)
+
                               ((MV-NTH '1
                                        (GEVAL-RULE-ALIST (TABLE-ALIST 'GL-FUNCTION-INFO
                                                                       (W STATE))
@@ -1703,7 +1707,7 @@
                   '(:use ((:instance run-gified-ev-falsify
                                      (x (disjoin (function-def-clause
                                                   run-gified-fn run-gified-fn
-                                                  '(fn actuals hyp clk state)
+                                                  '(fn actuals hyp clk config bvar-db state)
                                                   (body run-gified-fn nil (w
                                                                            state)))))
                                      (a a)))
@@ -1712,8 +1716,7 @@
                  (acl2::simple-generalize-cp
                   clause '(((MV-NTH '1 (ACL2::SIMPLE-ONE-WAY-UNIFY-LST
                                         '((IMPLIES (IF (BFR-EVAL HYP (CAR ENV))
-                                                       (IF (GOBJ-LISTP ACTUALS)
-                                                           OKP-TERM 'NIL)
+                                                       OKP-TERM
                                                        'NIL)
                                                    (EQUAL LHS-TERM RHS-TERM)))
                                         CLAUSE 'NIL)) . subst))))))

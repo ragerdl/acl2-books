@@ -31,7 +31,7 @@ use File::Spec;
 use Storable qw(nstore retrieve);
 use Cwd 'abs_path';
 
-my $cache_version_code = 3;
+my $cache_version_code = 5;
 
 # Note: for debugging you can enable this use and then print an error message
 # using
@@ -84,7 +84,12 @@ sub get_abs_path {
 sub abs_canonical_path {
     my $path = shift;
     # print "path: $path\n";
-    my $abspath = File::Spec->rel2abs($path);
+    my $abspath;
+    if (File::Spec->file_name_is_absolute($path)) {
+	$abspath = $path;
+    } else {
+	$abspath = File::Spec->rel2abs($path);
+    }
     # print "abspath: $abspath\n";
     my ($vol, $dir, $file) = File::Spec->splitpath($abspath);
     # print "path: $path vol: $vol dir: $dir file: $file\n";
@@ -885,7 +890,7 @@ sub parse_params {
 sub get_cert_param {
     my ($base,$the_line,$events) = @_;
 
-    my $regexp = "cert[-_]param:[\\s]*\\(?([^)]*)\\)?";
+    my $regexp = "cert[-_]param:?[\\s]*\\(?([^)]*)\\)?";
     my @match = $the_line =~ m/$regexp/;
     if (@match) {
 	debug_print_event($base, "cert_param", \@match);
@@ -918,6 +923,8 @@ sub get_cert_param {
     return 0;
 }
 
+# (check-hons-enabled (:book
+# cert_param (hons-only)
 
 
 

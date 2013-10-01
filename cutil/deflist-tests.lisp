@@ -24,11 +24,17 @@
 
 (in-package "CUTIL")
 (include-book "deflist")
-(local (include-book "str/top" :dir :system))
-(local (include-book "misc/assert" :dir :system))
+(include-book "str/top" :dir :system)
+(include-book "misc/assert" :dir :system)
+
+(make-event
+ (prog2$
+  (cw "~%~%~%WARNING!  PRINTER ON FIRE!~%You are loading ~
+       cutil/deflist-tests! Don't do that!~%~%")
+  '(value-triple :invisible))
+ :check-expansion t)
 
 
-(local (progn
 
 (in-theory
  ;; This is awful and you should generally never do it.  But here, the idea is
@@ -260,8 +266,6 @@
    (str::isubstrp "@(def |CUTIL|::|RATLIST-IS-RATIONAL-LISTP|)"
                   (cdr (assoc :long topic)))))
 
-))
-
 
 
 
@@ -316,4 +320,22 @@
                   (null x)
                   :elementp-of-nil t))))
 
+
+
+
+(deflist atom-listp (acl2::x)
+  ;; This is an especially hard case because ACL2 knows so much about
+  ;; ATOM and CONSP.
+  (atom acl2::x)
+  :true-listp t
+  :elementp-of-nil t
+  :already-definedp t)
+
+(deflist alistp (acl2::x)
+  ;; This is an especially hard case because ACL2 knows so much about
+  ;; ATOM and CONSP.
+  (consp acl2::x)
+  :true-listp t
+  :elementp-of-nil nil
+  :already-definedp t)
 

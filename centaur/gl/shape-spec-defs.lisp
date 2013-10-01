@@ -1,8 +1,24 @@
-
-
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
-
 (include-book "gobject-types")
 (include-book "symbolic-arithmetic-fns")
 
@@ -32,7 +48,8 @@
                 (and (nat-listp (caddr nspec))
                      (if (atom (cdddr nspec))
                          (not (cdddr nspec))
-                         (nat-listp (cadddr nspec)))))))))
+                         (and (nat-listp (cadddr nspec))
+                              (not (cddddr nspec))))))))))
 
 
 (defagg g-integer (sign bits var))
@@ -51,8 +68,8 @@
                 (consp (cddr x))
                 (pseudo-termp (caddr x))
                 (not (cdddr x))))))
-                
-           
+
+
 
 (mutual-recursion
  (defun shape-specp (x)
@@ -78,7 +95,7 @@
        (:g-apply nil)
        (:g-call (and (symbolp (g-call->fn x))
                      (not (eq (g-call->fn x) 'quote))
-                     (shape-spec-listp (g-call->args x)) 
+                     (shape-spec-listp (g-call->args x))
                      (ss-unary-functionp (g-call->inverse x))))
        (otherwise (and (shape-specp (car x))
                        (shape-specp (cdr x)))))))
@@ -116,7 +133,7 @@
 (flag::make-flag shape-spec-flag shape-spec-ind
                  :flag-mapping ((shape-spec-ind . ss)
                                 (shape-spec-list-ind . list)))
-   
+
 
 
 
@@ -499,3 +516,137 @@
 (verify-guards shape-spec-env-slice
                :hints(("Goal" :in-theory (enable shape-specp))))
 
+
+
+
+(defun shape-spec-bindingsp (x)
+  (declare (xargs :guard t))
+  (if (atom x)
+      (equal x nil)
+    (and (consp (car x))
+         (symbolp (caar x))
+         (not (keywordp (caar x)))
+         (caar x)
+         (consp (cdar x))
+         (shape-specp (cadar x))
+         (shape-spec-bindingsp (cdr x)))))
+
+
+(local
+ (defthm nat-listp-true-listp
+   (implies (nat-listp x)
+            (true-listp x))
+   :hints(("Goal" :in-theory (enable nat-listp)))
+   :rule-classes (:rewrite :forward-chaining)))
+
+
+(defund number-spec-indices (nspec)
+  (declare (xargs :guard (number-specp nspec)
+                  :guard-hints (("goal" :in-theory (enable number-specp)))))
+  (append (car nspec)
+          (and (consp (cdr nspec))
+               (append (cadr nspec)
+                       (and (consp (cddr nspec))
+                            (append (caddr nspec)
+                                    (and (consp (cdddr nspec))
+                                         (cadddr nspec))))))))
+
+
+(mutual-recursion
+ (defun shape-spec-indices (x)
+   (declare (xargs :guard (shape-specp x)
+                   :verify-guards nil))
+   (if (atom x)
+       nil
+     (pattern-match x
+       ((g-number nspec)
+        (number-spec-indices nspec))
+       ((g-integer sign bits &)
+        (cons sign bits))
+       ((g-integer? sign bits & intp)
+        (list* intp sign bits))
+       ((g-boolean n) (list n))
+       ((g-var &) nil)
+       ((g-ite if then else)
+        (append (shape-spec-indices if)
+                (shape-spec-indices then)
+                (shape-spec-indices else)))
+       ((g-concrete &) nil)
+       ((g-call & args &) (shape-spec-list-indices args))
+       (& (append (shape-spec-indices (car x))
+                  (shape-spec-indices (cdr x)))))))
+ (defun shape-spec-list-indices (x)
+   (declare (xargs :guard (shape-spec-listp x)))
+   (if (atom x)
+       nil
+     (append (shape-spec-indices (car x))
+             (shape-spec-list-indices (cdr x))))))
+
+
+
+(defund numlist-to-vars (lst)
+  (declare (xargs :guard (nat-listp lst)
+                  :guard-hints (("goal" :in-theory (enable nat-listp)))))
+  (if (atom lst)
+      nil
+    (cons (bfr-var (car lst))
+          (numlist-to-vars (cdr lst)))))
+
+(defund num-spec-to-num-gobj (nspec)
+  (declare (xargs :guard (number-specp nspec)
+                  :guard-hints (("goal" :in-theory (enable number-specp)))))
+  (cons (numlist-to-vars (car nspec))
+        (and (consp (cdr nspec))
+             (cons (numlist-to-vars (cadr nspec))
+                   (and (consp (cddr nspec))
+                        (cons (numlist-to-vars (caddr nspec))
+                              (and (consp (cdddr nspec))
+                                   (list (numlist-to-vars
+                                          (cadddr nspec))))))))))
+
+(mutual-recursion
+ (defun shape-spec-to-gobj (x)
+   (declare (xargs :guard (shape-specp x)
+                   :guard-hints (("goal" :in-theory (enable shape-specp
+                                                            shape-spec-listp)))))
+   (if (atom x)
+       x
+     (pattern-match x
+       ((g-number nspec)
+        (g-number (num-spec-to-num-gobj nspec)))
+       ((g-integer sign bits var)
+        (g-apply 'logapp
+                 (list (len bits)
+                       (g-number (list (bfr-logapp-nus
+                                        (len bits) (numlist-to-vars bits) nil)))
+                       (g-apply 'int-set-sign
+                                (list (g-boolean (bfr-var sign))
+                                      (g-var var))))))
+       ((g-integer? sign bits var intp)
+        (g-apply 'maybe-integer
+                 (list
+                  (g-apply 'logapp
+                           (list (len bits)
+                                 (g-number (list (bfr-logapp-nus
+                                                  (len bits) (numlist-to-vars bits) nil)))
+                                 (g-apply 'int-set-sign
+                                          (list (g-boolean (bfr-var sign))
+                                                (g-var var)))))
+                  (g-var var)
+                  (g-boolean (bfr-var intp)))))
+       ((g-boolean n) (g-boolean (bfr-var n)))
+       ((g-var &) x)
+       ((g-ite if then else)
+        (g-ite (shape-spec-to-gobj if)
+               (shape-spec-to-gobj then)
+               (shape-spec-to-gobj else)))
+       ((g-concrete &) x)
+       ((g-call fn args &) (g-apply fn (shape-spec-to-gobj-list args)))
+       (& (gl-cons (shape-spec-to-gobj (car x))
+                   (shape-spec-to-gobj (cdr x)))))))
+ (defun shape-spec-to-gobj-list (x)
+   (declare (xargs :guard (shape-spec-listp x)))
+   (if (atom x)
+       nil
+     (cons (shape-spec-to-gobj (car x))
+           (shape-spec-to-gobj-list (cdr x))))))

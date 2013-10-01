@@ -1,3 +1,22 @@
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
 
@@ -307,7 +326,7 @@
                (rst (and (not (or (eql inum 0) (equal inum '(nil)))) (cons (to-svec inum) rst)))
                (rst (and (or rst (not (or (eql rden 1) (equal rden '(t))))) (cons (to-uvec rden) rst))))
           (g-number (cons (to-svec rnum) rst)))))))
-            
+
 
 (defmacro mk-g-number (rnum &optional
                               (rden '1)
@@ -329,13 +348,6 @@
 ;; the cons of the evaluations of the two inputs.  Gl-cons ensures that this is
 ;; the case, that is, if the first is a g-keyword-symbol it wraps it in a g-concrete.
 
-
-(defun gl-cons (x y)
-  (declare (xargs :guard t))
-  (cons (if (g-keyword-symbolp x)
-            (g-concrete x)
-          x)
-        y))
 
 (defun gl-list-macro (lst)
   (if (atom lst)
@@ -362,3 +374,32 @@
     (implies (gobj-listp x)
              (gobj-listp (gl-cons k x)))
     :hints(("Goal" :in-theory (enable gl-cons tag)))))
+
+
+(mutual-recursion
+ (defun gobj-depends-on (k p x)
+   (if (atom x)
+       nil
+     (pattern-match x
+       ((g-boolean b) (pbfr-depends-on k p b))
+       ((g-number n)
+        (b* (((mv rn rd in id) (break-g-number n)))
+          (or (pbfr-list-depends-on k p rn)
+              (pbfr-list-depends-on k p rd)
+              (pbfr-list-depends-on k p in)
+              (pbfr-list-depends-on k p id))))
+       ((g-ite test then else)
+        (or (gobj-depends-on k p test)
+            (gobj-depends-on k p then)
+            (gobj-depends-on k p else)))
+       ((g-concrete &) nil)
+       ((g-var &) nil)
+       ((g-apply & args) (gobj-list-depends-on k p args))
+       (& (or (gobj-depends-on k p (car x))
+              (gobj-depends-on k p (cdr x)))))))
+ (defun gobj-list-depends-on (k p x)
+   (if (atom x)
+       nil
+     (or (gobj-depends-on k p (car x))
+         (gobj-list-depends-on k p (cdr x))))))
+

@@ -3789,7 +3789,7 @@
       (dolist (scc sccs)
         (simple-anchors (srg-restrict srg scc) ahash ccmfs num-contexts))
       ;; convert the set of anchors to a list.
-      (let ((anchors (loop for k being the hash-key using (hash-value v) of ahash
+      (let ((anchors (loop for k being the hash-keys of ahash using (hash-value v)
                            when v collect k)))
         ;;(format t "simple anchors: ~A~%" anchors)
         ;; if we have found anchors, return them.
@@ -7350,6 +7350,7 @@
 (defun dynamic-make-event-fn (body event-form state)
 ;;  (declare (xargs :mode :program))
   (make-event-fn `',body
+                 nil
                  nil
                  nil
                  event-form

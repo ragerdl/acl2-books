@@ -26,7 +26,7 @@
 (defsection var-is-stobj-p
   :parents (support)
   :short "@(call var-is-stobj-p) checks whether @('var') is currently the name
-of a @(see stobj)."
+of a @(see acl2::stobj)."
 
   (defund var-is-stobj-p (var world)
     (declare (xargs :guard (and (symbolp var)
@@ -98,7 +98,7 @@ causes a hard error if @('fn') isn't a function."
 (defsection look-up-return-vals
   :parents (support)
   :short "@(call look-up-return-vals) returns the @('stobjs-out') property for
-@('fn').  This is a list that may contain @('nil')s and @(see stobj) names,
+@('fn').  This is a list that may contain @('nil')s and @(see acl2::stobj) names,
 with the same length as the number of return vals for @('fn')."
 
   (defund look-up-return-vals (fn world)
@@ -164,3 +164,40 @@ macro-args)."
      (assert! (equal (look-up-wrapper-args 'f3 (w state))
                      '(x y &key (c '5) (d '7)))))))
 
+
+
+(defsection logic-mode-p
+  :parents (support)
+  :short "@(call logic-mode-p) looks up the function @('fn') and returns
+@('t') if @('fn') is in logic mode, or @('nil') otherwise.  It causes a
+hard error if @('fn') isn't a function."
+
+  (defund logic-mode-p (fn world)
+    (declare (xargs :guard (and (symbolp fn)
+                                (plist-worldp world))))
+    (b* ((__function__ 'logic-mode-p)
+         (look (getprop fn 'acl2::formals :bad 'acl2::current-acl2-world world))
+         ((when (eq look :bad))
+          (raise "Can't look up the formals for ~x0!" fn))
+         (symbol-class (getprop fn 'acl2::symbol-class nil 'acl2::current-acl2-world world))
+         ((unless (member symbol-class '(:common-lisp-compliant
+                                         :ideal
+                                         :program)))
+          (raise "Unexpected symbol-class for ~x0: ~x1." fn symbol-class)))
+      (not (eq symbol-class :program))))
+
+  (local (in-theory (enable logic-mode-p)))
+
+  (defthm booleanp-of-look-up-formals
+    (or (equal (logic-mode-p fn world) t)
+        (equal (logic-mode-p fn world) nil))
+    :rule-classes :type-prescription)
+
+  (local
+   (progn
+     (defun f (x) (declare (xargs :mode :program)) x)
+     (defun g (x) x)
+     (defun h (x) (declare (xargs :verify-guards t)) x)
+     (assert! (logic-mode-p 'g (w state)))
+     (assert! (logic-mode-p 'h (w state)))
+     (assert! (not (logic-mode-p 'f (w state)))))))

@@ -1,9 +1,28 @@
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
 
 (include-book "bfr-sat")
-(include-book "gl-doc-string")
-(include-book "../aig/bddify-correct")
+(include-book "../aig/bddify")
+(local (include-book "../aig/bddify-correct"))
 (local (include-book "../aig/eval-restrict"))
 
 
@@ -21,7 +40,7 @@
   (declare (xargs :guard t))
   (bfr-case
    :bdd (mv nil nil nil) ;; fail
-   :aig 
+   :aig
    (b* ((vars (acl2::aig-vars prop))
         (bindings (vars-to-bdd-bindings vars 0))
         ((mv bdd & exact)
@@ -33,8 +52,8 @@
 
 
 
-(defthm ubddp-val-alistp-vars-to-bdd-bindings
-  (acl2::ubddp-val-alistp (vars-to-bdd-bindings x n)))
+(local (defthm ubddp-val-alistp-vars-to-bdd-bindings
+         (acl2::ubddp-val-alistp (vars-to-bdd-bindings x n))))
 
 
 (local (include-book "arithmetic/top-with-meta" :dir :system))
@@ -119,18 +138,19 @@
                  (acl2::vars (vars-to-bdd-env (acl2::aig-vars prop) env)))))))
 
 
-(defmacro gl-aig-bddify-mode ()
-  ":Doc-section ACL2::GL
-Use experimental AIG-based symbolic simulation in GL.~/
-This macro produces an event which sets the GL reasoning mode to use AIGs.
-This is a new, experimental feature under development.~/~/"
-  '(progn (acl2::defattach bfr-mode bfr-aig)
-          (acl2::defattach bfr-counterex-mode bfr-counterex-bdd)
-          (acl2::defattach
-           (bfr-sat bfr-sat-bddify)
-           :hints (("goal" :in-theory '(bfr-sat-bddify-unsat))
-                   (and stable-under-simplificationp
-                        '(:in-theory (enable bfr-sat-bddify)))))))
+(defsection gl-aig-bddify-mode
+  :parents (modes reference)
+  :short "GL: use AIGs as the Boolean function representation and solve queries
+by transforming them to BDDs."
+
+  (defmacro gl-aig-bddify-mode ()
+    '(progn (acl2::defattach bfr-mode bfr-aig)
+            (acl2::defattach bfr-counterex-mode bfr-counterex-bdd)
+            (acl2::defattach
+             (bfr-sat bfr-sat-bddify)
+             :hints (("goal" :in-theory '(bfr-sat-bddify-unsat))
+                     (and stable-under-simplificationp
+                          '(:in-theory (enable bfr-sat-bddify))))))))
 
 (local (gl-aig-bddify-mode))
 

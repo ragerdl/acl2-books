@@ -29,30 +29,21 @@
 (include-book "base")
 (include-book "book-thms")
 
-(make-event `(defconst *xdoc-dir/save*
-               ,(acl2::extend-pathname *xdoc-dir* "save" state)))
-(make-event `(defconst *xdoc-dir/display*
-               ,(acl2::extend-pathname *xdoc-dir* "display" state)))
-(make-event `(defconst *xdoc-dir/topics*
-               ,(acl2::extend-pathname *xdoc-dir* "topics" state)))
-(make-event `(defconst *xdoc-dir/defxdoc-raw*
-               ,(acl2::extend-pathname *xdoc-dir* "defxdoc-raw" state)))
-(make-event `(defconst *xdoc-dir/mkdir-raw*
-               ,(acl2::extend-pathname *xdoc-dir* "mkdir-raw" state)))
-(make-event `(defconst *xdoc-dir/extra-packages*
-               ,(acl2::extend-pathname *xdoc-dir* "extra-packages" state)))
-
 (defmacro colon-xdoc-init ()
-  '(with-output :off (summary event)
+  '(with-output :off (summary event observation)
      (make-event
       (if (not (cdr (assoc 'colon-xdoc-support-loaded (table-alist 'xdoc (w state)))))
         `(progn
-           (include-book ,*xdoc-dir/defxdoc-raw* :ttags :all)
-           (include-book ,*xdoc-dir/topics*)
-           (include-book ,*xdoc-dir/display*)
-           (include-book ,*xdoc-dir/extra-packages*)
-           (import-acl2doc)
-           (maybe-import-bookdoc)
+           (include-book ;; newlines to fool dependency scanner
+            "xdoc/defxdoc-raw" :dir :system :ttags :all)
+           (include-book
+            "xdoc/topics" :dir :system)
+           (include-book
+            "xdoc/display" :dir :system)
+           (encapsulate ()
+            (local (xdoc-quiet)) ;; Suppress warnings when just using :xdoc (or :doc) 
+            (local (set-inhibit-warnings "Documentation"))
+            (import-acl2doc))
            (table xdoc 'colon-xdoc-support-loaded t))
         '(value-triple :invisible)))))
 
@@ -73,58 +64,41 @@
 
 ; Hijack ACL2's :doc keyword and replace it with :xdoc
 
-(defun add-ld-keyword-aliases (alist state)
-  (declare (xargs :mode :program :stobjs state))
-  (let ((current (f-get-global 'acl2::ld-keyword-aliases state)))
-    (set-ld-keyword-aliases (append alist current) state)))
-
-(make-event
-  (er-progn (add-ld-keyword-aliases '((:doc 1 xdoc)) state)
-            (value '(value-triple :invisible)))
-  ;; Try check-expansion in case that helps make it stick
-  :check-expansion t)
+(add-ld-keyword-alias! :doc '(1 xdoc))
 
 (defmacro save (dir &key
+                    (type ':fancy)
+                    (import 't)
+                    ;; Classic options (ignored for type :fancy)
                     (index-pkg 'acl2::foo)
-                    (expand-level '1)
-                    (import 't))
+                    (expand-level '1))
   `(progn
-     (include-book ,*xdoc-dir/defxdoc-raw* :ttags :all)
-     (include-book ,*xdoc-dir/mkdir-raw* :ttags :all)
-     (include-book ,*xdoc-dir/save*)
-
+     (include-book
+      "xdoc/defxdoc-raw" :dir :system :ttags :all)
+     (include-book
+      "oslib/mkdir" :dir :system)
+     (include-book
+      ,(if (eq type :fancy)
+           "xdoc/save-fancy"
+         "xdoc/save-classic")
+      :dir :system)
      ;; ugh, stupid stupid writes-ok stupidity
      (defttag :xdoc)
      (remove-untouchable acl2::writes-okp nil)
      ,@(and import
-            `((include-book ,*xdoc-dir/topics*)
-              (include-book ,*xdoc-dir/extra-packages*)
-              (import-acl2doc)
-              (maybe-import-bookdoc)))
+            `((include-book
+               "xdoc/topics" :dir :system)
+              (import-acl2doc)))
      ;; b* should have been included by the above includes
      (make-event
       (b* (((mv all-xdoc-topics state) (all-xdoc-topics state))
            (- (cw "(len all-xdoc-topics): ~x0~%" (len all-xdoc-topics)))
            ((mv & & state) (assign acl2::writes-okp t))
-           (state (save-topics all-xdoc-topics ,dir ',index-pkg ',expand-level state)))
+           (state
+            ,(if (eq type :fancy)
+                 `(save-fancy all-xdoc-topics ,dir state)
+               `(save-topics all-xdoc-topics ,dir ',index-pkg ',expand-level state))))
         (value '(value-triple :invisible))))))
-
-(defmacro xdoc-just-from-events (events)
-  `(encapsulate
-     ()
-     (local (include-book ,*xdoc-dir/topics*))
-     (local ,events)
-     (make-event
-      (mv-let (er val state)
-        (let ((state (acl2::f-put-global 'acl2::xdoc-alist nil state)))
-          (time$ (acl2::write-xdoc-alist :skip-topics xdoc::*acl2-ground-zero-names*)
-                 :msg "; Importing :doc topics took ~st sec, ~sa bytes~%"
-                 :mintime 1))
-        (declare (ignore er val))
-        (let ((topics (acl2::f-get-global 'acl2::xdoc-alist state)))
-          (prog2$
-           (cw "(len topics): ~x0~%" (len topics))
-           (value `(table xdoc 'doc ',topics))))))))
 
 (defmacro xdoc-extend (name long)
   ;; Extend an existing xdoc topic with more content.  Long is an xdoc

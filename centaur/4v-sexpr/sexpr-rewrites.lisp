@@ -19,7 +19,7 @@
 ; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "ACL2")
-(include-book "centaur/aig/base" :dir :system) ;; BOZO for alphorder-sort
+(include-book "centaur/aig/aig-base" :dir :system) ;; BOZO for alphorder-sort
 (include-book "sexpr-advanced")
 (include-book "centaur/misc/hons-extra" :dir :system)
 (include-book "sexpr-vars-1pass")
@@ -884,6 +884,7 @@ input."
              ((buf (buf a))         . (buf a))
              ((buf (ite a b c))     . (ite a b c))
              ((buf (ite* a b c))    . (ite* a b c))
+             ((buf (zif a b c))     . (ite* a b c))
              ((buf (and a b))       . (and a b))
              ((buf (or a b))        . (or a b))
              ((buf (not a))         . (not a))
@@ -990,6 +991,14 @@ input."
              ;; ?? ITE* normalize to XOR
              ((ite* a b (not b))     . (not (xor a b)))
              ((ite* a (not b) b)     . (xor a b))
+
+             ;; ZIF constant propagation
+             ((zif (t) a b)         . a)
+             ((zif (f) a b)         . b)
+             ;; ZIF remove NOT on condition
+             ((zif (not c) a b)     . (zif c b a))
+             ;; ZIF select is buffered
+             ((zif (buf c) a b)     . (zif c a b))
 
              ;; ??? Normalize IFF to NOT of XOR.
              ;; If we decide not to do this normalization, maybe move IFF up in the
@@ -1921,6 +1930,7 @@ simplifying using the known signals."
     (iff a b)
     (or a b)
     (ite* a b c)
+    (zif a b c)
     (buf a)
     (res a a)
     (ite a b c)
@@ -2223,6 +2233,12 @@ simplifying using the known signals."
                     (equal (4v-sexpr-eval y env)
                            (4v-sexpr-eval x (4v-sexpr-eval-alist al env))))))
 
+  (local (in-theory (disable sexpr-booleanp-by-rule
+                             sexpr-booleanp-by-rules
+                             sexpr-booleanp
+                             intersection$-of-cons-left
+                             sexpr-booleanp-list)))
+
   (defthm-flag-sexpr-booleanp
     (defthm 4v-boolp-when-sexpr-booleanp-by-rule
       (implies (and (sexpr-booleanp-by-rule rule x all-rules)
@@ -2230,7 +2246,8 @@ simplifying using the known signals."
                     (4v-sexpr-boolean-rulesp all-rules)
                     (4v-alist-boolp (4v-sexpr-vars x) alist))
                (4v-boolp (4v-sexpr-eval x alist)))
-      :hints ((and stable-under-simplificationp
+      :hints ('(:expand ((sexpr-booleanp-by-rule rule x all-rules)))
+              (and stable-under-simplificationp
                    '(:use ((:instance sexpr-unify-4v-sexpr-compose
                             (pat rule) (term x) (alist nil)))
                      :in-theory (e/d (4v-sexpr-eval-4v-sexpr-compose-strong)
@@ -2242,13 +2259,16 @@ simplifying using the known signals."
                     (4v-sexpr-boolean-rulesp all-rules)
                     (4v-alist-boolp (4v-sexpr-vars x) alist))
                (4v-boolp (4v-sexpr-eval x alist)))
+      :hints ('(:expand ((sexpr-booleanp-by-rules rules x all-rules))))
       :flag rules)
     (defthm 4v-boolp-when-sexpr-booleanp
       (implies (and (sexpr-booleanp x all-rules)
                     (4v-sexpr-boolean-rulesp all-rules)
                     (4v-alist-boolp (4v-sexpr-vars x) alist))
                (4v-boolp (4v-sexpr-eval x alist)))
-      :hints ((and stable-under-simplificationp
+      :hints ('(:expand ((sexpr-booleanp x all-rules)
+                         (sexpr-booleanp nil all-rules)))
+              (and stable-under-simplificationp
                    '(:expand ((:free (x) (4v-alist-boolp (list x) alist))))))
       :flag sexpr)
     (defthm 4v-boolp-when-sexpr-booleanp-list
@@ -2256,6 +2276,7 @@ simplifying using the known signals."
                     (4v-sexpr-boolean-rulesp all-rules)
                     (4v-alist-boolp (4v-sexpr-vars-list x) alist))
                (4v-bool-listp (4v-sexpr-eval-list x alist)))
+      :hints ('(:expand ((sexpr-booleanp-list x all-rules))))
       :flag list))
    
 
@@ -2282,6 +2303,8 @@ simplifying using the known signals."
   '(((xor a a)        . (f))
     ((xor a (not a))  . (t))
     ((ite* a x x)     . (buf x))
+    ((zif  a x x)     . x)
+    ((zif  x a b)     . (ite* x a b))
     ((buf a)          . a)))
            
 (defsection 4v-sexpr-boolean-rewritep

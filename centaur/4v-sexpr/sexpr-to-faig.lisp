@@ -21,7 +21,9 @@
 (in-package "ACL2")
 (include-book "sexpr-eval")
 (include-book "sexpr-3v")
-(include-book "centaur/aig/three-four" :dir :system)
+(include-book "centaur/aig/faig-base" :dir :system)
+(include-book "centaur/aig/faig-constructors" :dir :system)
+(include-book "centaur/aig/faig-equivs" :dir :system)
 (include-book "centaur/aig/aig-equivs" :dir :system)
 (include-book "centaur/misc/tuplep" :dir :system)
 (local (include-book "centaur/aig/eval-restrict" :dir :system))
@@ -94,22 +96,22 @@ generates an appropriate @('onoff') so that it can carry out a @(see
 
 (defthm faig-eval-of-constants
   ;; BOZO find me a home
-  (and (equal (faig-eval *4t* env) *4t*)
-       (equal (faig-eval *4f* env) *4f*)
-       (equal (faig-eval *4z* env) *4z*)
-       (equal (faig-eval *4x* env) *4x*)
-       (equal (faig-eval nil env)  *4x*))
+  (and (equal (faig-eval (faig-t) env) (faig-t))
+       (equal (faig-eval (faig-f) env) (faig-f))
+       (equal (faig-eval (faig-z) env) (faig-z))
+       (equal (faig-eval (faig-x) env) (faig-x))
+       (equal (faig-eval nil env)  (faig-x)))
   :hints(("Goal" :in-theory (enable faig-eval))))
 
 (local (defthm faig-equiv-nil-x
          ;; BOZO find me a home?
-         (equal (faig-equiv nil *4x*) t)
+         (equal (faig-equiv nil (faig-x)) t)
          :hints (("goal" :in-theory (enable faig-equiv)))))
 
 (local (defthm faig-eval-when-atom
          (implies (atom x)
                   (equal (faig-eval x env)
-                         *4x*))
+                         (faig-x)))
          :hints(("Goal" :in-theory (enable faig-eval)))))
 
 
@@ -141,7 +143,7 @@ to just say anything malformed gets fixed to @('X').</p>"
     (declare (xargs :guard t))
     (if (faig-const-p x)
         x
-      *4x*))
+      (faig-x)))
 
   (defthm faig-const-fix-of-faig-eval
     (equal (faig-const-fix (faig-eval x env))
@@ -160,7 +162,7 @@ to just say anything malformed gets fixed to @('X').</p>"
     (let ((x (faig-const-fix x))
           (y (faig-const-fix y)))
       (or (equal x y)
-          (equal x *4x*)))))
+          (equal x (faig-x))))))
 
 
 
@@ -172,9 +174,9 @@ to just say anything malformed gets fixed to @('X').</p>"
 
   (defun faig-const->4v (x)
     (declare (xargs :guard t))
-    (cond ((equal x *4t*) (4vt))
-          ((equal x *4f*) (4vf))
-          ((equal x *4z*) (4vz))
+    (cond ((equal x (faig-t)) (4vt))
+          ((equal x (faig-f)) (4vf))
+          ((equal x (faig-z)) (4vz))
           (t              (4vx)))))
 
 (defsection faig-const-list->4v-list
@@ -220,10 +222,10 @@ to just say anything malformed gets fixed to @('X').</p>"
   (defun 4v->faig-const (x)
     "4V constant --> FAIG constant"
     (declare (xargs :guard t))
-    (cond ((eq x (4vt)) *4t*)
-          ((eq x (4vf)) *4f*)
-          ((eq x (4vz)) *4z*)
-          (t            *4x*)))
+    (cond ((eq x (4vt)) (faig-t))
+          ((eq x (4vf)) (faig-f))
+          ((eq x (4vz)) (faig-z))
+          (t            (faig-x))))
 
   (local (in-theory (enable 4v-fix)))
 
@@ -306,7 +308,7 @@ faig-constructors)."
               (,fvfn . ,(apply-to-args '4v->faig-const args)))))
 
   (fv-4v-commute 4v-fix      faig-const-fix (a))
-  (fv-4v-commute 4v-unfloat  t-aig-fix      (a))
+  (fv-4v-commute 4v-unfloat  f-aig-unfloat      (a))
   (fv-4v-commute 4v-not      f-aig-not      (a))
   (fv-4v-commute 4v-and      f-aig-and      (a b))
   (fv-4v-commute 4v-or       f-aig-or       (a b))
@@ -314,7 +316,8 @@ faig-constructors)."
   (fv-4v-commute 4v-iff      f-aig-iff      (a b))
   (fv-4v-commute 4v-ite      f-aig-ite      (a b c))
   (fv-4v-commute 4v-ite*     f-aig-ite*     (a b c))
-  (fv-4v-commute 4v-tristate t-aig-buf      (c a))
+  (fv-4v-commute 4v-zif      f-aig-zif      (a b c))
+  (fv-4v-commute 4v-tristate t-aig-tristate      (c a))
   (fv-4v-commute 4v-pullup   f-aig-pullup   (a))
   (fv-4v-commute 4v-res      f-aig-res      (a b)))
 
@@ -337,13 +340,13 @@ use the @('f-') versions of the @(see faig-constructors) at each level.</p>"
                (let ((look (hons-get x onoff)))
                  (if (consp (cdr look))
                      (cdr look)
-                   *4x*))
-             *4x*))
+                   (faig-x)))
+             (faig-x)))
           (fn (car x))
-          ((when (eq fn (4vt))) *4t*)
-          ((when (eq fn (4vf))) *4f*)
-          ((when (eq fn (4vz))) *4z*)
-          ((when (eq fn (4vx))) *4x*)
+          ((when (eq fn (4vt))) (faig-t))
+          ((when (eq fn (4vf))) (faig-f))
+          ((when (eq fn (4vz))) (faig-z))
+          ((when (eq fn (4vx))) (faig-x))
           (args (4v-sexpr-to-faig-plain-list (cdr x) onoff))
           (arg1 (4v-first  args))
           (arg2 (4v-second args))
@@ -355,13 +358,14 @@ use the @('f-') versions of the @(see faig-constructors) at each level.</p>"
          (iff       (f-aig-iff    arg1 arg2))
          (or        (f-aig-or     arg1 arg2))
          (ite*      (f-aig-ite*   arg1 arg2 arg3))
-         (buf       (t-aig-fix    arg1))
+         (zif       (f-aig-zif    arg1 arg2 arg3))
+         (buf       (f-aig-unfloat    arg1))
          (res       (f-aig-res    arg1 arg2))
-         (tristate  (t-aig-buf    arg1 arg2))
+         (tristate  (t-aig-tristate    arg1 arg2))
          (ite       (f-aig-ite    arg1 arg2 arg3))
          (pullup    (f-aig-pullup arg1))
          (id        (faig-fix     arg1))
-         (otherwise *4x*))))
+         (otherwise (faig-x)))))
 
    (defun 4v-sexpr-to-faig-plain-list (x onoff)
      (declare (xargs :guard t))
@@ -433,32 +437,36 @@ use the @('f-') versions of the @(see faig-constructors) at each level.</p>"
    (local (in-theory (enable* (:ruleset f-aig-defs)
                               (:ruleset t-aig-defs))))
 
-   (defthm t-aig-not-of-t-aig-fix
-     (equal (t-aig-not (t-aig-fix x))
+   (defthm t-aig-not-of-f-aig-unfloat
+     (equal (t-aig-not (f-aig-unfloat x))
             (f-aig-not x)))
 
-   (defthm t-aig-and-t-aig-fix
-     (equal (t-aig-and (t-aig-fix x) (t-aig-fix y))
+   (defthm t-aig-and-f-aig-unfloat
+     (equal (t-aig-and (f-aig-unfloat x) (f-aig-unfloat y))
             (f-aig-and x y)))
 
-   (defthm t-aig-or-t-aig-fix
-     (equal (t-aig-or (t-aig-fix x) (t-aig-fix y))
+   (defthm t-aig-or-f-aig-unfloat
+     (equal (t-aig-or (f-aig-unfloat x) (f-aig-unfloat y))
             (f-aig-or x y)))
 
-   (defthm t-aig-xor-t-aig-fix
-     (equal (t-aig-xor (t-aig-fix x) (t-aig-fix y))
+   (defthm t-aig-xor-f-aig-unfloat
+     (equal (t-aig-xor (f-aig-unfloat x) (f-aig-unfloat y))
             (f-aig-xor x y)))
 
-   (defthm t-aig-iff-t-aig-fix
-     (equal (t-aig-iff (t-aig-fix x) (t-aig-fix y))
+   (defthm t-aig-iff-f-aig-unfloat
+     (equal (t-aig-iff (f-aig-unfloat x) (f-aig-unfloat y))
             (f-aig-iff x y)))
 
-   (defthm t-aig-ite-t-aig-fix
-     (equal (t-aig-ite (t-aig-fix c) (t-aig-fix x) (t-aig-fix y))
+   (defthm t-aig-ite-f-aig-unfloat
+     (equal (t-aig-ite (f-aig-unfloat c) (f-aig-unfloat x) (f-aig-unfloat y))
             (f-aig-ite c x y)))
 
-   (defthm t-aig-ite*-t-aig-fix
-     (equal (t-aig-ite* (t-aig-fix c) (t-aig-fix x) (t-aig-fix y))
+   (defthm t-aig-ite*-unfloat-is-f-aig-zif-unfloat
+     (equal (t-aig-ite* (f-aig-unfloat c) x y)
+            (f-aig-zif c x y)))
+
+   (defthm t-aig-ite*-f-aig-unfloat
+     (equal (f-aig-zif c (f-aig-unfloat x) (f-aig-unfloat y))
             (f-aig-ite* c x y)))))
 
 
@@ -470,48 +478,48 @@ use the @('f-') versions of the @(see faig-constructors) at each level.</p>"
 
 
 
-(defsection maybe-t-aig-fix
+(defsection maybe-f-aig-unfloat
 
-  (defund maybe-t-aig-fix (sexpr faig)
+  (defund maybe-f-aig-unfloat (sexpr faig)
     (declare (xargs :guard t))
     (if (3v-syntax-sexprp sexpr)
         faig
-      (t-aig-fix faig)))
+      (f-aig-unfloat faig)))
 
-  (local (in-theory (enable maybe-t-aig-fix)))
+  (local (in-theory (enable maybe-f-aig-unfloat)))
 
-  (defthm faig-eval-maybe-t-aig-fix
+  (defthm faig-eval-maybe-f-aig-unfloat
     (implies (equal (faig-eval x fenv)
                     (4v->faig-const (4v-sexpr-eval sexpr senv)))
-             (equal (faig-eval (maybe-t-aig-fix sexpr x) fenv)
-                    (faig-eval (t-aig-fix x) fenv)))))
+             (equal (faig-eval (maybe-f-aig-unfloat sexpr x) fenv)
+                    (faig-eval (f-aig-unfloat x) fenv)))))
 
 
 
-(defsection maybe-t-aig-fix-list
+(defsection maybe-f-aig-unfloat-list
 
-  (defun maybe-t-aig-fix-list (sexprs faigs)
+  (defun maybe-f-aig-unfloat-list (sexprs faigs)
     (declare (xargs :guard (equal (len sexprs) (len faigs))))
     (if (atom sexprs)
         nil
-      (cons (maybe-t-aig-fix (car sexprs) (car faigs))
-            (maybe-t-aig-fix-list (cdr sexprs) (cdr faigs)))))
+      (cons (maybe-f-aig-unfloat (car sexprs) (car faigs))
+            (maybe-f-aig-unfloat-list (cdr sexprs) (cdr faigs)))))
 
-  (defthm nth-maybe-t-aig-fix-list
+  (defthm nth-maybe-f-aig-unfloat-list
     (implies (equal (len x) (len sexprs))
-             (equal (faig-fix (nth n (maybe-t-aig-fix-list sexprs x)))
-                    (faig-fix (maybe-t-aig-fix (nth n sexprs) (nth n x)))))
+             (equal (faig-fix (nth n (maybe-f-aig-unfloat-list sexprs x)))
+                    (faig-fix (maybe-f-aig-unfloat (nth n sexprs) (nth n x)))))
     :hints(("Goal"
             :induct (nth-both-ind n sexprs x)
-            :expand ((maybe-t-aig-fix-list sexprs x)))))
+            :expand ((maybe-f-aig-unfloat-list sexprs x)))))
 
-  (defthm nth-maybe-t-aig-fix-list-faig-equiv
+  (defthm nth-maybe-f-aig-unfloat-list-faig-equiv
     (implies (equal (len x) (len sexprs))
-             (faig-equiv (nth n (maybe-t-aig-fix-list sexprs x))
-                         (maybe-t-aig-fix (nth n sexprs) (nth n x))))
+             (faig-equiv (nth n (maybe-f-aig-unfloat-list sexprs x))
+                         (maybe-f-aig-unfloat (nth n sexprs) (nth n x))))
     :hints(("Goal"
             :induct (nth-both-ind n sexprs x)
-            :expand ((maybe-t-aig-fix-list sexprs x))))))
+            :expand ((maybe-f-aig-unfloat-list sexprs x))))))
 
 
 
@@ -529,23 +537,30 @@ use the @('f-') versions of the @(see faig-constructors) at each level.</p>"
                (let ((look (hons-get x onoff)))
                  (if (consp (cdr look))
                      (cdr look)
-                   *4x*))
-             *4x*))
+                   (faig-x)))
+             (faig-x)))
           (fn (car x))
-          ((when (eq fn (4vt))) *4t*)
-          ((when (eq fn (4vf))) *4f*)
-          ((when (eq fn (4vz))) *4z*)
-          ((when (eq fn (4vx))) *4x*)
+          ((when (eq fn (4vt))) (faig-t))
+          ((when (eq fn (4vf))) (faig-f))
+          ((when (eq fn (4vz))) (faig-z))
+          ((when (eq fn (4vx))) (faig-x))
           (sargs (cdr x))
           (args (4v-sexpr-to-faig-opt-list sargs onoff))
           ;; There are a few functions where we don't really get any benefit from
           ;; knowing the args are three-valued:
           ((when (eq fn 'id))       (faig-fix (4v-first args))) ;; bozo why??
           ((when (eq fn 'res))      (f-aig-res (4v-first args) (4v-second args)))
-          ((when (eq fn 'tristate)) (t-aig-buf (4v-first args) (4v-second args)))
+          ((when (eq fn 'tristate)) (t-aig-tristate (4v-first args) (4v-second args)))
           ((when (eq fn 'pullup))   (f-aig-pullup (4v-first args)))
+          ((when (eq fn 'zif))
+           (t-aig-ite* (maybe-f-aig-unfloat
+                        (mbe :logic (first sargs)
+                             :exec (and (consp sargs) (car sargs)))
+                        (4v-first args))
+                       (4v-second args)
+                       (4v-third args)))
           ;; Otherwise, fixup only those subexpressions that might produce Zs
-          (args (maybe-t-aig-fix-list (cdr x) args))
+          (args (maybe-f-aig-unfloat-list sargs args))
           (arg1 (4v-first args))
           (arg2 (4v-second args))
           (arg3 (4v-third args)))
@@ -558,7 +573,7 @@ use the @('f-') versions of the @(see faig-constructors) at each level.</p>"
          (or        (t-aig-or   arg1 arg2))
          (buf       (faig-fix   arg1))
          (ite       (t-aig-ite  arg1 arg2 arg3))
-         (otherwise *4x*))))
+         (otherwise (faig-x)))))
    (defun 4v-sexpr-to-faig-opt-list (x onoff)
      (declare (xargs :guard t))
      (if (atom x)
@@ -606,36 +621,36 @@ use the @('f-') versions of the @(see faig-constructors) at each level.</p>"
 
 
 
-  (local (defthm faig-eval-maybe-t-aig-fix-rw
+  (local (defthm faig-eval-maybe-f-aig-unfloat-rw
            (let ((4v-env (faig-const-alist->4v-alist (faig-eval-alist al fenv))))
              (implies (and (bind-free '((al . al)) (al))
                            (equal (faig-eval x fenv)
                                   (4v->faig-const (4v-sexpr-eval sexpr 4v-env))))
-                      (equal (faig-eval (maybe-t-aig-fix sexpr x) fenv)
-                             (faig-eval (t-aig-fix x) fenv))))
-           :hints(("Goal" :in-theory (enable maybe-t-aig-fix)))))
+                      (equal (faig-eval (maybe-f-aig-unfloat sexpr x) fenv)
+                             (faig-eval (f-aig-unfloat x) fenv))))
+           :hints(("Goal" :in-theory (enable maybe-f-aig-unfloat)))))
 
-  (local (defthm faig-eval-maybe-t-aig-fix-rw1
+  (local (defthm faig-eval-maybe-f-aig-unfloat-rw1
            (let ((4v-env (faig-const-alist->4v-alist (faig-eval-alist al fenv))))
              (implies
               (and (bind-free '((al . al)) (al))
                    (equal (faig-eval-list x fenv)
                           (4v-list->faig-const-list (4v-sexpr-eval-list sexprs 4v-env))))
-              (equal (faig-eval (maybe-t-aig-fix (nth n sexprs) (nth n x)) fenv)
-                     (faig-eval (t-aig-fix (nth n x)) fenv))))
+              (equal (faig-eval (maybe-f-aig-unfloat (nth n sexprs) (nth n x)) fenv)
+                     (faig-eval (f-aig-unfloat (nth n x)) fenv))))
            :hints(("Goal"
-                   :in-theory (disable* maybe-t-aig-fix)
+                   :in-theory (disable* maybe-f-aig-unfloat)
                    :expand ((faig-eval-list x fenv)
                             (:free (a) (4v-sexpr-eval-list sexprs a))
                             (:free (a b) (4v-list->faig-const-list (cons a b))))
                    :induct (nth-both-ind n sexprs x)))))
 
-  (local (defthm faig-eval-nth-maybe-t-aig-fix-list
+  (local (defthm faig-eval-nth-maybe-f-aig-unfloat-list
            (implies (and (equal (faig-eval (nth n x) fenv)
                                 (4v->faig-const (4v-sexpr-eval (nth n sexprs) senv)))
                          (equal (len x) (len sexprs)))
-                    (equal (faig-eval (nth n (maybe-t-aig-fix-list sexprs x)) fenv)
-                           (faig-eval (t-aig-fix (nth n x)) fenv)))
+                    (equal (faig-eval (nth n (maybe-f-aig-unfloat-list sexprs x)) fenv)
+                           (faig-eval (f-aig-unfloat (nth n x)) fenv)))
            :hints(("Goal" :in-theory (disable* 4v->faig-const)))))
 
   (defthm-4v-sexpr-flag
@@ -655,7 +670,7 @@ use the @('f-') versions of the @(see faig-constructors) at each level.</p>"
                                   faig-const-fix
                                   faig-const-alist->4v-alist
                                   faig-const->4v
-                                  maybe-t-aig-fix
+                                  maybe-f-aig-unfloat
                                   )))
            (and stable-under-simplificationp
                 '(:expand ((4v-sexpr-to-faig-opt-list (cdr x) al)))))))

@@ -142,7 +142,16 @@ non-@(see 4vp) objects are coerced to X.</p>"
   :parents (4v)
   :short "Primitive operations in our four-valued logic."
 
-  :long "<p>Note that all of these operations are <see topic='@(url
+  :long "<p>This is a collection of operations on @(see 4vp)s that are
+generally meant to model the behavior of particular, primitive kinds of
+circuits.  For instance, in the @(see esim) hardware simulator, the @(see
+esim-primitives) are generally based on these operations.</p>
+
+<p>The operations here apply to four-valued constants and produce new
+four-valued constants as results.  If you are looking for operations that
+construct new @(see 4v-sexprs), see instead the @(see 4vs-constructors).</p>
+
+<p>Note that all of these operations are <see topic='@(url
 4v-monotonicity)'>monotonic</see>.</p>")
 
 
@@ -553,6 +562,29 @@ get to carry out this kind of optimization.</p>"
                (t
                 (4vx))))))
 
+(defsection 4v-zif
+  :parents (4v-operations)
+  :short "Unusual semantics for a multiplexor, used mainly to implement composition
+features in @(see esim) "
+
+  :long "<p>A ZIF module is in some ways similar to a pass-gate based
+multiplexor, but is probably not the sort of thing you would actually want to
+use to model a mux.  It is very similar to an @(see 4v-ite*) but does not @(see
+4v-unfloat) its inputs.  We include this mainly as a way to implement
+experimental composition features in @(see esim).</p>"
+
+  (defun 4v-zif (c a b)
+    (declare (xargs :guard t))
+    (mbe :logic
+         (4vcases c
+           (t (4v-fix a))
+           (f (4v-fix b))
+           (& (4vx)))
+         :exec
+         (cond ((eq c (4vt)) (4v-fix a))
+               ((eq c (4vf)) (4v-fix b))
+               (t
+                (4vx))))))
 
 
 (defsection 4v-tristate
@@ -889,7 +921,7 @@ specification).</p>
 
 
 (def-ruleset 4v-op-defs '(4v-fix 4v-unfloat 4v-not 4v-and 4v-or 4v-xor 4v-iff
-                                 4v-res 4v-ite 4v-ite* 4v-tristate 4v-pullup
+                                 4v-res 4v-ite 4v-ite* 4v-zif 4v-tristate 4v-pullup
                                  4v-wand 4v-wor))
 
 (def-ruleset 4v-op-execs '((4v-fix$inline)
@@ -902,6 +934,7 @@ specification).</p>
                            (4v-res)
                            (4v-ite)
                            (4v-ite*)
+                           (4v-zif)
                            (4v-tristate)
                            (4v-pullup)
                            (4v-wand)
@@ -1042,6 +1075,7 @@ value of the input, then we are unsure of the value of the output.</p>"
   (prove-4v-monotonic 4v-res (a b))
   (prove-4v-monotonic 4v-ite (c a b))
   (prove-4v-monotonic 4v-ite* (c a b))
+  (prove-4v-monotonic 4v-zif (c a b))
   (prove-4v-monotonic 4v-tristate (c a))
   (prove-4v-monotonic 4v-pullup (a))
   (prove-4v-monotonic 4v-wand (a b))
@@ -1216,4 +1250,22 @@ value is a four-valued constant), when X[k] &lt;= Y[k] for every key k.</p>"
                                       (x (cons (cons k v) a))
                                       (y b)
                                       (k k0)))))))))
+
+
+
+(defun bool-to-4v (x)
+  (declare (xargs :guard t))
+  (if x *4vt* *4vf*))
+
+(defun 4v-to-nat (a)
+  (declare (xargs :guard t))
+  (if (atom a)
+      0
+    (let ((rest (4v-to-nat (cdr a))))
+      (if (integerp rest)
+          (case (car a)
+            ((t) (+ 1 (* 2 rest)))
+            ((f) (* 2 rest))
+            (t 'x))
+        rest))))
 

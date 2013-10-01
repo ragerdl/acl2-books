@@ -66,6 +66,7 @@ The following older libraries are basically superseded by arithmetic-5
 certify the <CODE>cowles</CODE> and <CODE>arithmetic</CODE> books when
 not using make, e.g., for example, when using a Macintosh.
 </LI>
+<LI><A HREF="cgen">cgen</A>: support for counterexample generation</LI>
 <LI><A HREF="clause-processors">clause-processors</A>: examples of the use of
 clause processors (e.g., external tools)</LI>
 <LI><A HREF="coi">coi</A>:  The coi books comprise a "shelf" of ACL2
@@ -74,7 +75,6 @@ processors, memories, kernels, microcode, and so on.
 </LI>
 <LI><A HREF="concurrent-programs">concurrent-programs</A>: contributions by
 Sandip Ray (see </code>Readme.lsp</code> files in subdirectories)</LI>
-<LI><A HREF="countereg-gen">countereg-gen</A>: support for counterexample generation</LI>
 <LI><A HREF="cowles">cowles</A>: support for arithmetic books</LI>
 <LI><A HREF="cutil">cutil</A>: Centaur Basic Utilities
 <LI><A HREF="data-structures">data-structures</A>: books for common data
@@ -90,10 +90,6 @@ href="data-structures/memories">memories</a></LI>
 trust tags to modify or extend core ACL2 behavior</LI>
 <LI><A HREF="hints">hints</A>: tests of hints, especially <code>:or</code> and
 <code>:custom</code> hints</LI>
-<LI><A HREF="hons-archive">hons-archive</A>: Implements Hons Archives
-(HARs), which are a way to write ACL2 objects to disk so they can be
-loaded in other ACL2 sessions.
-</LI>
 <LI><A HREF="ihs">ihs</A>: ``integer hardware specification'', integer
 arithmetic appropriate for hardware modeling</LI>
 <LI><A HREF="interface">interface</A>: utilities providing Emacs support for
@@ -103,6 +99,8 @@ proof-trees and acl2-mode, as well as (obsolete?) infix printing.</LI>
 <code>make-event</code>, which implements the idea of macros that can take state</LI>
 <LI><A HREF="memoize">memoize</A>: a descendant of the memoization scheme developed by Bob Boyer and Warren A. Hunt, Jr., which was incorporated into ACL2(h)</LI>
 <LI><A HREF="meta">meta</A>: metafunctions for arithmetic</LI>
+<LI><A HREF="milawa">milawa</A>:  a "self-verifying" theorem prover for an ACL2-like logic, developed
+by Jared Davis for his Ph.D. dissertation.</LI>
 <LI><A HREF="misc">misc</A>:  a grab-bag of useful books and
 utilities</LI>
 <LI><A HREF="models">models</A>:  models, especially of digital systems, with associated proofs</LI>
@@ -118,6 +116,7 @@ and then gunzip and extract it there.</LI>
 pedagogical use.</LI>
 <LI><A HREF="parallel">parallel</A>: example use of primitives for
   parallelism (with speed-up only in experimental extension that supports parallel evaluation)</LI>
+<LI><A HREF="parsers">parsers</A>: parsers</LI>
 <LI><A HREF="powerlists">powerlists</A>: a data-structure suited to the analysis of recursive,
 data-parallel algorithms.</LI>
 <LI><A HREF="proofstyles">proofstyles</A>: Soundness and completeness of
@@ -150,6 +149,7 @@ in <I><A
 HREF="http://www.cs.utexas.edu/users/moore/publications/acl2-books/car/index.html">Computer-Aided
 Reasoning: An Approach</A></I></LI>
 <LI><A HREF="tools">tools</A>: macros and tools designed to make common constructs easier and less verbose to write</LI>
+<LI><A HREF="translators">translators</A>: translators to and from ACL2</LI>
 <LI><A HREF="tutorial-problems">tutorial-problems</A>: solutions to
 exercises of a tutorial nature</LI>
 <LI><A HREF="unicode">unicode</A>: help for reading input from files</LI>
@@ -190,24 +190,14 @@ for contributing books to ACL2</a>.
 
 <H2><A NAME="CertificationInstructions">Certification Instructions</A></H2>
 
-The instructions below assume that you are standing in subdirectory
-<CODE>books</CODE> of the ACL2 distribution.
+Instructions for certifying the ACL2 community books may be found in
+the folllowing ACL2 documentation topic: <a href="http://www.cs.utexas.edu/users/moore/acl2/current/BOOKS-CERTIFICATION.html">BOOKS-CERTIFICATION</a>.
 
-<P>
+<p>
 
-To certify the ACL2 community books, execute a command such as one of
-the following.  In the first case, we assume that if environment
-variable named "<code>ACL2</code>" is defined then it specifies your
-ACL2 executable, and otherwise the command "<code>acl2</code>" invokes
-your ACL2 executable.  In the second and third cases, we define such
-an environment variable on the command line, where in the second case
-we assume that <code>my_acl2</code> is on your path.
-<PRE>
-make
-make ACL2=my_acl2
-make ACL2=/u/smith/bin/my_acl2
-</PRE>
-To certify more books,
+If you obtained your books from a gzipped tarfile (typically
+named <code>books-*.tar.gz</code>), as opposed to svn, then you don't
+yet have the workshops books.  If you want them, simply
 <a href="http://code.google.com/p/acl2-books/downloads/">download
 workshops.tar.gz</a> to your acl2-sources/books/ directory</a>, and
 then gunzip and extract it there.

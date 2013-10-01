@@ -36,7 +36,6 @@
 ;;       these can be omitted unless desired.
 ;; (include-book "stv-debug")
 
-
 (defxdoc symbolic-test-vectors
   :parents (esim)
   :short "A concise way to describe, evaluate, and debug symbolic simulations
@@ -78,14 +77,11 @@ stv-implementation-details).</p>")
   :long "<h3>Example Test Vector</h3>
 
 @({
- ((:initial
-   (\"foo.statemachine.busy\"  0)
-   (\"foo.prevStutter\"        stutter))
-
- ;; phases:                0      1     2     3     4          5        6  ...
+ (
+ ;; phases:                0      1     2     3     4      5        6  ...
  ;; ---------------------------------------------------------------------------
 
-  (:inputs
+  (:inputs ;; for supplying values to input wires
    (\"clock\"               0      ~)
    (\"ibus[13:10]\"     #b101  #b101     _)
    (\"ibus[9:0]\"          op     op     _)
@@ -95,25 +91,29 @@ stv-implementation-details).</p>")
    (\"reset\"               0)
    (\"fuse[0]\"             X))
 
-  (:outputs
+  (:outputs ;; for extracting values on output wires
    (\"result_bus\"          _      _     _     _     _       res1     res2)
    (\"result_bus[63:32]\"   _      _     _     _     _    res-hi1  res-hi2)
    (\"result_bus[31:0]\"    _      _     _     _     _    res-lo1  res-lo2)
    )
 
-  (:internals
+  (:internals ;; for extracting values on internal wires
    (\"queue0.mgr.fail\"     _      _     qf1   qf2   _))
 
+ ;; advanced features:
+
+  (:overrides ;; for forcibly overriding values on wires
+
+   ;; abstract away product wire, replacing it with variables
+   (\"foo.prod\"           _      _   prod    _     _      _        _ )
+
+   ;; force fast mode to true after phase 1, no matter what its real value is
+   (\"foo.fastmode\"       _      _     1     1     1      1        1 ))
+
   )
- ;; ---------------------------------------------------------------------------
 })
 
 <h3>High-Level Overview</h3>
-
-<p>The @(':initial') section controls the initial values of state bits.  For
-the above vector, @('foo.statemachine.busy') will be initialized to zero and
-@('foo.prevStutter') will be some particular value, @('stutter'), that can be
-specified at @(see stv-run) time.</p>
 
 <p>The @(':inputs') section controls how the module's inputs will be set over
 the course of the simulation.  For the above vector,</p>
@@ -165,6 +165,11 @@ there is an X in only one side of the result bus.</li>
 
 <p>The @(':internals') section is similar to the outputs section, but it allows
 you to pull out the values of internal signals in the module.</p>
+
+
+<p>The @(':overrides') section is similar to the inputs section, but it allows
+you to forcibly install new values onto wires, regardless of how they are
+actually driven by the circuit.</p>
 
 
 <h3>Input Line Format</h3>
@@ -281,33 +286,40 @@ include a Verilog-style bit- or part-select at the end.  It is also possible to
 use explicit lsb-first ordered lists of ESIM paths.</p>
 
 
-<h3>Initial Line Format</h3>
+<h3>Override Line Format</h3>
 
-<p>Each line in the @(':initial') section explains how to initialize some state
-bits.  Unlike input lines, each initial line has only a single value, namely
-its value at the start of the simulation.  This is because the value the
-register stores during the subsequent phases of the simulation is determined by
-the circuit.  Each initial line has the following format:</p>
+<p>Each line in the @(':override') section explains how to override some
+internal wire.</p>
 
-@({
- (name value)
-})
-
-<p>The names in initial lines may be strings that are Verilog-style plain or
+<p>The names in override lines may be strings that are Verilog-style plain or
 hierarchical identifiers using periods as separators, which may optionally
 include a Verilog-style bit- or part-select at the end.  It is also possible to
 use explicit lsb-first ordered lists of ESIM paths.</p>
 
-<p>STVs are slightly clever in how they interpret these names.  In short, you
-don't have to write down the whole path to a Verilog @('reg') or anything like
-that, because the STV compiler will automatically walk backwards from whatever
-paths you give it.  As long as this walk takes it to a flop or latch, it will
-know which state bit to initialize.  In practice, you can give paths that are
-separated from their Verilog @('reg')s through any number of assignments,
-inverters, and buffers.</p>
+<p>The @('value')s here are similar to those of input lines, except that:</p>
 
-<p>The @('value')s here are like those of input lines, except that you can't
-use @('~') since there isn't any previous value to invert.</p>")
+<ul>
+
+<li>@('~') is not allowed, because it would be somewhat confusing.</li>
+
+<li>@('_') means \"don't override the wire during this phase\".</li>
+
+</ul>
+
+<p>Every variable used in an override line becomes both an input and an output
+variable of the STV.  For instance, in the example above, we had the following
+override line:</p>
+
+@({
+   (\"foo.prod\"           _      _   prod    _     _      _        _ )
+})
+
+<p>Here, as an input to the STV, @('prod') allows us to forcibly set the value
+of the wire @('foo.prod').  As an output, @('prod') gives us the <b>original,
+un-overridden</b> expression for @('prod').  (Well, that's probably mostly
+true.  If @('prod') depends on other overridden values, or is involved in some
+combinational loop so that it affects itself, then this may not be quite
+right.)</p>")
 
 
 
@@ -388,7 +400,7 @@ only have to pay the price of processing an STV once.</p>
 <p>Once the STV has been processed, we can run it with concrete values for the
 input simulation variables; see @(see stv-run).  To do this, we basically need
 to (1) translate the input numbers into bit-level bindings, (2) use @(see
-sexpr-eval) to reduce the sexprs that are found in the Processed STV with the
+4v-sexpr-eval) to reduce the sexprs that are found in the Processed STV with the
 bindings for their inputs, and (3) translate back from the resulting output-bit
 bindings into numbers (or Xes) for the output alist.  This is about as cheap as
 we know how to make it.</p>
@@ -401,62 +413,252 @@ would need to generate a waveform.</p>
 
 <p>Well, basically we just do a new @(see esim) simulation that does include
 the internal variables, and then run through the rest of the process again.  We
-memoize things so that even though your first call of @(see stv-debug) is
-expensive, subsequent calls will not need to redo the simulation or
+@(see memoize) things so that even though your first call of @(see stv-debug)
+is expensive, subsequent calls will not need to redo the simulation or
 specialization steps.</p>")
 
-(defsection stv-autohyps
+(define stv-autohyps-aux ((ins symbol-listp)
+                          (stv processed-stv-p))
+  :parents (stv-autohyps)
+  :long "<p>We could have used @(see unsigned-byte-p) instead, but that gets us
+into trouble with :expand hints when recursive definitions of unsigned-byte-p
+are installed, so just use explicit bounds instead.</p>"
+  (if (atom ins)
+      nil
+    (list* `(natp ,(car ins))
+           `(< ,(car ins) (expt 2 ,(stv-in->width (car ins) stv)))
+           (stv-autohyps-aux (cdr ins) stv))))
 
-  (defund stv-autohyps-aux (ins stv)
-    (declare (xargs :guard (and (symbol-listp ins)
-                                (processed-stv-p stv))))
-    (if (atom ins)
-        nil
-      ;; Could have used unsigned-byte-p instead, but that gets us into trouble
-      ;; with :expand hints when recursive definitions of unsigned-byte-p are
-      ;; installed, so just use explicit bounds instead.
-      (list* `(natp ,(car ins))
-             `(< ,(car ins) (expt 2 ,(stv-in->width (car ins) stv)))
-            (stv-autohyps-aux (cdr ins) stv))))
+(define stv-autohyps ((stv processed-stv-p))
+  :parents (defstv)
+  :short "Generate the body for an STV's autohyps macro."
+  (b* ((ins (stv->ins stv))
+       ((unless (symbol-listp ins))
+        (raise "Non-symbol inputs?")))
+    `(and . ,(stv-autohyps-aux ins stv))))
 
-  (defund stv-autohyps (stv)
-    (declare (xargs :guard (processed-stv-p stv)))
-    (b* ((ins (stv->ins stv))
-         ((unless (symbol-listp ins))
-          (er hard? 'stv-autohyps "Non-symbol inputs?")))
-      `(and . ,(stv-autohyps-aux ins stv)))))
+(define stv-autobinds-aux ((ins symbol-listp)
+                           (stv processed-stv-p))
+  :parents (stv-autobinds)
+  (if (atom ins)
+      nil
+    (cons `(:nat ,(car ins) ,(stv-in->width (car ins) stv))
+          (stv-autobinds-aux (cdr ins) stv))))
+
+(define stv-autobinds ((stv processed-stv-p))
+  :parents (defstv)
+  :short "Generate the body for an STV's autobinds macro."
+  (b* ((ins (stv->ins stv))
+       ((unless (symbol-listp ins))
+        (raise "Non-symbol inputs?")))
+    `(gl::auto-bindings . ,(stv-autobinds-aux ins stv))))
+
+(define stv-autoins-aux (ins)
+  :parents (stv-autoins)
+  (if (atom ins)
+      nil
+    (cons `(cons ',(car ins) ,(car ins))
+          (stv-autoins-aux (cdr ins)))))
+
+(define stv-autoins ((stv processed-stv-p))
+  :parents (defstv)
+  :short "Generate the body for an STV's autoins macro."
+  `(list . ,(stv-autoins-aux (stv->ins stv))))
 
 
-(defsection stv-autobinds
 
-  (defund stv-autobinds-aux (ins stv)
-    (declare (xargs :guard (and (symbol-listp ins)
-                                (processed-stv-p stv))))
-    (if (atom ins)
-        nil
-      (cons `(:nat ,(car ins) ,(stv-in->width (car ins) stv))
-            (stv-autobinds-aux (cdr ins) stv))))
+(local (in-theory (disable good-esim-modulep)))
 
-  (defund stv-autobinds (stv)
-    (declare (xargs :guard (processed-stv-p stv)))
-    (b* ((ins (stv->ins stv))
-         ((unless (symbol-listp ins))
-          (er hard? 'stv-autobinds "Non-symbol inputs?")))
-      `(gl::auto-bindings . ,(stv-autobinds-aux ins stv)))))
+(define defstv-main
+  :parents (defstv)
+  :short "Main error checking and processing of an STV."
+
+  (&key (mod good-esim-modulep)
+        (name symbolp)
+        inputs outputs internals overrides)
+
+  :returns (pstv (equal (processed-stv-p pstv)
+                        (if pstv t nil))
+                 :hyp (force (symbolp name)))
+
+  :long "<p>This is the main part of @(see defstv).</p>
+
+<p>We split this out into its own function for advanced users who need a
+non-event based way to introduce symbolic test vectors.</p>
+
+<p>This does only the STV processing.  We don't deal here with generating
+documentation, creating autohyps macros, etc.</p>"
+
+  (b* ((mod         (or mod
+                        ;; Blah, silly, (good-esim-modulep nil) is true, so
+                        ;; explicitly check for this.
+                        (raise "No :mod was specified.")))
+       (inputs      (if (true-list-listp inputs)
+                        inputs
+                      (raise ":inputs are not even a true-list-listp")))
+       (outputs     (if (true-list-listp outputs)
+                        outputs
+                      (raise ":outputs are not even a true-list-listp")))
+       (internals   (if (true-list-listp internals)
+                        internals
+                      (raise ":internals are not even a true-list-listp")))
+       (overrides   (if (true-list-listp overrides)
+                        overrides
+                      (raise ":overrides are not even a true-list-listp")))
+
+       (stv         (make-stvdata :overrides overrides
+                                  :inputs    inputs
+                                  :outputs   outputs
+                                  :internals internals))
+
+       (preprocessed-stv
+        (time$ (let* ((stv (stv-widen stv))
+                      (stv (stv-expand stv mod)))
+                 stv)
+               :msg "; stv preprocessing: ~st sec, ~sa bytes~%"
+               :mintime 1/2))
+
+       (compiled-stv
+        (time$ (stv-compile preprocessed-stv mod)
+               :msg "; stv compilation: ~st sec, ~sa bytes~%"
+               :mintime 1/2))
+
+       ((unless compiled-stv)
+        ;; this shouldn't happen... it should throw an error instead
+        (raise "stv-compile failed?"))
+
+       (mod (stv-cut-module
+             (compiled-stv->override-paths compiled-stv) mod))
+
+       (processed-stv
+        (time$ (stv-process name stv compiled-stv mod)
+               :msg "; stv processing: ~st sec, ~sa bytes~%"
+               :mintime 1/2))
+
+       ((unless processed-stv)
+        ;; this shouldn't happen... it should throw an error instead
+        (raise "stv-process failed?")))
+
+    processed-stv))
 
 
-(defsection stv-autoins
+(define defstv-fn
+  :parents (defstv)
+  :short "Implementation of @(see defstv)."
 
-  (defund stv-autoins-aux (ins)
-    (declare (xargs :guard t))
-    (if (atom ins)
-        nil
-      (cons `(cons ',(car ins) ,(car ins))
-            (stv-autoins-aux (cdr ins)))))
+  ((name            symbolp "E.g., mmx-run")
+   (mod-const-name  symbolp "E.g., the symbol *mmx*")
+   (mod             good-esim-modulep "E.g., the actual E module for *mmx*")
+   ;; Arguments from the user...
+   inputs outputs internals overrides
+   labels parents short long)
 
-  (defund stv-autoins (stv)
-    (declare (xargs :guard (processed-stv-p stv)))
-    `(list . ,(stv-autoins-aux (stv->ins stv)))))
+  (b* ((labels      (if (symbol-listp labels)
+                        labels
+                      (raise ":labels need to be a symbol-listp.")))
+
+       (want-xdoc-p (or parents short long))
+       (short       (cond ((stringp short) short)
+                          ((not short)     "")
+                          (t               (progn$ (raise ":short must be a string.")
+                                                   ""))))
+       (long        (cond ((stringp long) long)
+                          ((not long)     "")
+                          (t              (progn$ (raise ":long must be a string.")
+                                                  ""))))
+
+       (processed-stv (defstv-main :mod       mod
+                                   :name      name
+                                   :overrides overrides
+                                   :inputs    inputs
+                                   :outputs   outputs
+                                   :internals internals))
+       ((unless processed-stv)
+        ;; In practice we should have already thrown an error, so we should
+        ;; never hit this.
+        (raise "Failed to process STV."))
+
+       (compiled-stv (processed-stv->compiled-stv processed-stv))
+       (stv          (processed-stv->user-stv processed-stv))
+
+       ((unless (stvdata-p stv))
+        ;; Stupidity to satisfy guards of stv-to-xml call, below; this should
+        ;; be impossible to hit, I just don't want to prove it.
+        (raise "stv processing didn't produce good stvdata?"))
+
+       ;; Only now, after we've already compiled and processed the STV, do we
+       ;; bother to generate the documentation.  We want to make sure it stays
+       ;; in this order, because stv-to-xml doesn't have good error reporting.
+       (long (if (not want-xdoc-p)
+                 long
+               (str::cat "<h3>Simulation Diagram</h3>
+
+<p>This is a <see topic='@(url
+acl2::symbolic-test-vectors)'>symbolic test vector</see> defined with @(see
+acl2::defstv).</p>"
+                         (or (stv-to-xml stv compiled-stv labels)
+                             "Error generating diagram")
+                         long)))
+
+
+         ;; Stupid trick to avoid saving the module in the .cert file
+         (stvconst             (intern-in-package-of-symbol
+                                (str::cat "*" (symbol-name name) "*")
+                                name))
+         (modconst             (intern-in-package-of-symbol
+                                (str::cat "*" (symbol-name name) "-MOD*")
+                                name))
+         (name-mod             (intern-in-package-of-symbol
+                                (str::cat (symbol-name name) "-MOD")
+                                name))
+         (name-autohyps        (intern-in-package-of-symbol
+                                (str::cat (symbol-name name) "-AUTOHYPS")
+                                name))
+         (name-autoins         (intern-in-package-of-symbol
+                                (str::cat (symbol-name name) "-AUTOINS")
+                                name))
+         (name-autobinds       (intern-in-package-of-symbol
+                                (str::cat (symbol-name name) "-AUTOBINDS")
+                                name))
+
+         (cmds `((defconst ,stvconst ',processed-stv)
+
+                 (defconst ,modconst
+                   (stv-cut-module (compiled-stv->override-paths
+                                    (processed-stv->compiled-stv ,stvconst))
+                                   ,mod-const-name))
+
+                 (defund ,name ()
+                   ;; Using a 0-ary function instead of a constant is nice when
+                   ;; we want to look at DEF-GL-THMs with :PR, etc.
+                   (declare (xargs :guard t))
+                   ,stvconst)
+
+                 (defund ,name-mod ()
+                   (declare (xargs :guard t))
+                   ,modconst)
+
+                 (defmacro ,name-autohyps ()
+                   ',(stv-autohyps processed-stv))
+
+                 (defmacro ,name-autoins ()
+                   ',(stv-autoins processed-stv))
+
+                 (defmacro ,name-autobinds ()
+                    ',(stv-autobinds processed-stv))
+
+                 ))
+
+         (cmds (if (not want-xdoc-p)
+                   cmds
+                 (cons `(defxdoc ,name
+                          :parents ,parents
+                          :short ,short
+                          :long ,long)
+                       cmds))))
+
+      `(with-output :off (event)
+         (progn . ,cmds))))
 
 
 (defsection defstv
@@ -466,15 +668,15 @@ specialization steps.</p>")
 
 @({
  (defstv my-run
-   :mod *my-mod*
-   :initial   '((\"foo.bar.myreg\" mr)       ...)
+   :mod       *my-mod*
    :inputs    '((\"opcode\" _ _ op _)        ...)
    :outputs   '((\"result\" _ _ _ _ res _)   ...)
    :internals '((\"foo.bar.mybus\" _ _ mb _) ...)
-   :labels '(A nil B nil C nil)]
-   :parents ...
-   :short ...
-   :long ...)
+   :overrides '((\"foo.bar.mywire\" _ mw _ _) ...)
+   :labels    '(A nil B nil C nil)]
+   :parents   ...
+   :short     ...
+   :long      ...)
 })
 
 <p>The @('defstv') command is the main interface for defining symbolic test
@@ -492,9 +694,9 @@ convenient macros for use in @(see def-gl-thm) commands, and can also produce
 requirement lets us avoid writing the module into the certificate, which can
 significantly improve performance when including books with STVs.</li>
 
-<li>The @(':initial'), @(':inputs'), @(':outputs'), and @(':internals') control
-how to simulate the module.  For the syntax and meaning of these lines, see
-@(see symbolic-test-vector-format).</li>
+<li>The @(':inputs'), @(':outputs'), @(':internals'), and @(':overrides')
+control how to simulate the module.  For the syntax and meaning of these lines,
+see @(see symbolic-test-vector-format).</li>
 
 </ul>
 
@@ -524,7 +726,6 @@ processed-stv-p).  You should generally only interact with this object using
 interfacing functions like @(see stv->vars), @(see stv-out->width), etc., and
 not directly use the @('processed-stv-p') accessors (in case we change the
 format).</dd>
-
 
 <dt>@('(my-run-autohyps)')</dt>
 
@@ -590,165 +791,76 @@ be fine and very convenient.  For more complex modules, you'll probably want to
 write your own binding macros.  See @(see stv-easy-bindings) for a high-level
 way to describe most kind of bindings.</dd>
 
+<dt>@('(my-run-mod)')</dt>
+
+<dd>This is a disabled 0-ary function (i.e., a constant) that either returns
+@('*mod*') or, when @(':overrides') are used, some modified version of
+@('*mod*') where the overridden wires have been cut.  There is ordinarily no
+reason to need this, but certain functions like @('stv-debug') make use of
+it.</dd>
+
 </dl>"
-
-  (local (in-theory (disable good-esim-modulep)))
-
-  (defund defstv-fn (name mod-const-name ;; e.g., *mmx*
-                          mod            ;; e.g., the value of *mmx*
-                          initial inputs outputs internals
-                          labels parents short long)
-    (declare (xargs :guard (and (symbolp name)
-                                (symbolp mod-const-name)
-                                (good-esim-modulep mod))))
-    (b* ((mod         (or mod (er hard? 'defstv "No :mod was specified.")))
-
-         (initial     (if (true-list-listp initial)
-                          initial
-                        (er hard? 'defstv ":initial is not even a true-list-listp?")))
-         (inputs      (if (true-list-listp inputs)
-                          inputs
-                        (er hard? 'defstv ":inputs are not even a true-list-listp?")))
-         (outputs     (if (true-list-listp outputs)
-                          outputs
-                        (er hard? 'defstv ":outputs are not even a true-list-listp?")))
-         (internals   (if (true-list-listp internals)
-                          internals
-                        (er hard? 'defstv ":internals are not even a true-list-listp?")))
-         (labels      (if (symbol-listp labels)
-                          labels
-                        (er hard? 'defstv ":labels need to be a symbol-listp.")))
-
-         (stv         (make-stvdata :initial initial
-                                    :inputs inputs
-                                    :outputs outputs
-                                    :internals internals))
-
-         (want-xdoc-p (or parents short long))
-         (short       (cond ((stringp short) short)
-                            ((not short)     "")
-                            (t               (progn$ (er hard? 'defstv ":short must be a string.")
-                                                     ""))))
-         (long        (cond ((stringp long) long)
-                            ((not long)     "")
-                            (t              (progn$ (er hard? 'defstv ":long must be a string.")
-                                                    ""))))
-
-         (preprocessed-stv
-          (time$ (let* ((stv (stv-widen stv))
-                        (stv (stv-expand stv mod)))
-                   stv)
-                 :msg "; stv preprocessing: ~st sec, ~sa bytes~%"
-                 :mintime 1/2))
-
-         (compiled-stv
-          (time$ (stv-compile preprocessed-stv mod)
-                 :msg "; stv compilation: ~st sec, ~sa bytes~%"
-                 :mintime 1/2))
-
-         ((unless compiled-stv)
-          ;; this shouldn't happen... it should throw an error instead
-          (er hard? 'defstv-fn "stv-compile failed?"))
-
-
-         (processed-stv
-          (time$ (stv-process stv compiled-stv mod)
-                 :msg "; stv processing: ~st sec, ~sa bytes~%"
-                 :mintime 1/2))
-
-         ((unless processed-stv)
-          ;; this shouldn't happen... it should throw an error instead
-          (er hard? 'defstv-fn "stv-process failed?"))
-
-
-         ;; Only now, after we've already compiled and processed the STV, do we
-         ;; bother to generate the documentation.  We want to make sure it
-         ;; stays in this order, because stv-to-xml doesn't have good error
-         ;; reporting.
-         (long (if (not want-xdoc-p)
-                   long
-                 (str::cat "<h3>Simulation Diagram</h3>
-
-<p>This is a <see topic='@(url
-acl2::symbolic-test-vectors)'>symbolic test vector</see> defined with @(see
-acl2::defstv).</p>"
-                           (or (stv-to-xml stv compiled-stv labels)
-                               "Error generating diagram")
-                           long)))
-
-
-         ;; Stupid trick to avoid saving the module in the .cert file
-         (stvconst-without-mod (intern-in-package-of-symbol
-                                (str::cat "*" (symbol-name name) "-WITHOUT-MOD*")
-                                name))
-         (stvconst-with-mod    (intern-in-package-of-symbol
-                                (str::cat "*" (symbol-name name) "*")
-                                name))
-         (name-autohyps        (intern-in-package-of-symbol
-                                (str::cat (symbol-name name) "-AUTOHYPS")
-                                name))
-         (name-autoins         (intern-in-package-of-symbol
-                                (str::cat (symbol-name name) "-AUTOINS")
-                                name))
-         (name-autobinds       (intern-in-package-of-symbol
-                                (str::cat (symbol-name name) "-AUTOBINDS")
-                                name))
-
-         (cmds `((defconst ,stvconst-without-mod
-                   ;; Remove :mod from the quoted constant we save
-                   ',(change-processed-stv processed-stv :mod nil))
-
-                 (defconst ,stvconst-with-mod
-                   ;; Now restore it with a separate defconst, which gets evaluated
-                   ;; at include-book time
-                   (change-processed-stv ,stvconst-without-mod
-                                         :mod ,mod-const-name))
-
-                 (defund ,name ()
-                   ;; Using a 0-ary function instead of a constant is nice when
-                   ;; we want to look at DEF-GL-THMs with :PR, etc.
-                   (declare (xargs :guard t))
-                   ,stvconst-with-mod)
-
-                 (defmacro ,name-autohyps ()
-                   ',(stv-autohyps processed-stv))
-
-                 (defmacro ,name-autoins ()
-                   ',(stv-autoins processed-stv))
-
-                 (defmacro ,name-autobinds ()
-                    ',(stv-autobinds processed-stv))
-
-                 ))
-
-         (cmds (if (not want-xdoc-p)
-                   cmds
-                 (cons `(defxdoc ,name
-                          :parents ,parents
-                          :short ,short
-                          :long ,long)
-                       cmds))))
-
-      `(progn . ,cmds)))
 
   (defmacro defstv (name &key
                          mod
-                         initial inputs outputs internals
+                         inputs outputs internals overrides
                          labels parents short long)
     `(make-event
       (let ((event (defstv-fn ',name
                      ',mod ,mod
-                     ,initial ,inputs ,outputs ,internals
+                     ,inputs ,outputs ,internals ,overrides
                      ,labels ',parents ,short ,long)))
         event))))
 
 
-(defsection stv-easy-bindings
+
+
+(define stv-easy-bindings-inside-mix ((x "Some arguments inside of a :mix")
+                                      (stv processed-stv-p))
+  :parents (stv-easy-bindings)
+  (cond ((atom x)
+         nil)
+        ((symbolp (car x))
+         ;; Should be an STV input.
+         (cons `(:nat ,(car x) ,(stv-in->width (car x) stv))
+               (stv-easy-bindings-inside-mix (cdr x) stv)))
+        (t
+         ;; Anything else is illegal inside mix.
+         (raise "Inside a :mix you can only have symbols (the names of stv ~
+                 inputs), so ~x0 is illegal." (car x)))))
+
+(define stv-easy-bindings-main ((x   "Some arguments to easy-bindings")
+                                (stv processed-stv-p))
+  (cond ((atom x)
+         nil)
+        ((symbolp (car x))
+         ;; Should be an STV input.
+         (cons `(:nat ,(car x) ,(stv-in->width (car x) stv))
+               (stv-easy-bindings-main (cdr x) stv)))
+        ((and (consp (car x))
+              (equal (caar x) :mix))
+         (let ((things-to-mix (cdar x)))
+           (if (consp things-to-mix)
+               (cons `(:mix . ,(stv-easy-bindings-inside-mix things-to-mix stv))
+                     (stv-easy-bindings-main (cdr x) stv))
+             (raise ":MIX with no arguments? ~x0" (car x)))))
+        (t
+         (raise "Arguments to stv-easy-bindings should be input names or ~
+                 (:mix input-name-list), so ~x0 is illegal." (car x)))))
+
+(program)
+
+(define stv-easy-bindings
   :parents (symbolic-test-vectors)
   :short "Generating G-bindings from an STV in a particular way."
 
-  :long "<p>@(call stv-easy-bindings) returns a list of G-bindings.  That is,
-you can write something like:</p>
+  ((stv   "The STV you are dealing with."
+          processed-stv-p)
+   (order "The variable order you want to use."))
+
+  :long "<p>@(call stv-easy-bindings) is a macro for proving theorems about
+@(see symbolic-test-vectors) using @(see gl).  It returns a list of G-bindings
+for use with @(see def-gl-thm).  That is, you can write something like:</p>
 
 @({
  (def-gl-thm foo
@@ -757,63 +869,39 @@ you can write something like:</p>
     (stv-easy-bindings (my-stv) '(opcode size special (:mix a b) c)))
 })
 
-<p>The format of @('x') is simple: you can list out STV inputs and also use
-@('(:mix a b c ...)') where @('a'), @('b'), @('c'), ... are all STV inputs.</p>
+<p>This is probably only useful when:</p>
 
-<p>Bindings will be generated in the order specified, e.g., in the above
-example the @('opcode') will have the smallest indices, then @('size') next,
-etc.</p>
+<ul>
 
-<p>You do <b>not</b> have to mention all of the STV variables.  All unmentioned
-variables will be assigned indices after mentioned variables.</p>
+<li>You are using GL in BDD mode, not some AIG or SAT based mode.</li>
+
+<li>You are running into performance problems when using the default
+@('-autobinds') from the @(see defstv).</li>
+
+<li>You want to see if a different variable order performs better.</li>
+
+</ul>
+
+<p>To use @('stv-easy-bindings'), you just list (a subset of) the STV inputs in
+priority order.  For instance, in the above example, the @('opcode') will get
+the smallest indices, then @('size') next, etc.  You do <b>not</b> have to list
+all of the STV variables.  Any unmentioned variables will be assigned indices
+after mentioned variables.</p>
+
+<p>As in @(see gl::auto-bindings), you can also use @('(:mix a b c ...)') to
+interleave the bits of @('a'), @('b'), @('c'), ...; note that for this to work
+these variables must all share the same width.  This is generally useful for
+data buses that are going to be combined together.</p>
 
 <p>An especially nice feature of easy-bindings is that they automatically
 adjust when inputs to the STV are resized, when new inputs are added, and when
 irrelevant inputs are removed.</p>"
 
-  (defund stv-easy-bindings-inside-mix (x stv)
-    (declare (xargs :guard (processed-stv-p stv)))
-    (cond ((atom x)
-           nil)
-          ((symbolp (car x))
-           ;; Should be an STV input.
-           (cons `(:nat ,(car x) ,(stv-in->width (car x) stv))
-                 (stv-easy-bindings-inside-mix (cdr x) stv)))
-          (t
-           ;; Anything else is illegal inside mix.
-           (er hard? 'stv-easy-bindings-inside-mix
-               "Inside a :mix you can only have symbols (the names of stv
-              inputs), ~ so ~x0 is illegal." (car x)))))
-
-  (defund stv-easy-bindings-main (x stv)
-    (declare (xargs :guard (processed-stv-p stv)))
-    (cond ((atom x)
-           nil)
-          ((symbolp (car x))
-           ;; Should be an STV input.
-           (cons `(:nat ,(car x) ,(stv-in->width (car x) stv))
-                 (stv-easy-bindings-main (cdr x) stv)))
-          ((and (consp (car x))
-                (equal (caar x) :mix))
-           (let ((things-to-mix (cdar x)))
-             (if (consp things-to-mix)
-                 (cons `(:mix . ,(stv-easy-bindings-inside-mix things-to-mix stv))
-                       (stv-easy-bindings-main (cdr x) stv))
-               (er hard? 'stv-easy-bindings-main
-                   ":MIX with no arguments? ~x0" (car x)))))
-          (t
-           (er hard? 'stv-easy-bindings-main
-               "Arguments to stv-easy-bindings should be input names or ~
-              (:mix input-name-list), so ~x0 is illegal." (car x)))))
-
-  (defun stv-easy-bindings (stv x)
-    (declare (xargs :guard (processed-stv-p stv)
-                    :mode :program))
-    (b* ((binds   (stv-easy-bindings-main x stv))
-         (unbound (set-difference-equal (stv->ins stv)
-                                        (pat-flatten1 binds))))
-      (gl::auto-bindings-fn
-       (append binds
-               ;; bozo ugly, but workable enough...
-               (stv-easy-bindings-inside-mix unbound stv))))))
+  (b* ((binds   (stv-easy-bindings-main order stv))
+       (unbound (set-difference-equal (stv->ins stv)
+                                      (pat-flatten1 binds))))
+    (gl::auto-bindings-fn
+     (append binds
+             ;; bozo ugly, but workable enough...
+             (stv-easy-bindings-inside-mix unbound stv)))))
 

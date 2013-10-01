@@ -19,12 +19,11 @@
 ; Tshell
 ; Original author: Jared Davis <jared@centtech.com>
 
-
 (in-package "ACL2")
 
 ; NOTE: This file requires that str/strprefixp has been loaded.
 
-(defparameter *tshell-debug*
+(defvar *tshell-debug*
   ;; Change this to T for verbose debugging information.
   nil)
 
@@ -35,31 +34,35 @@
 ; We look for certain strings to know when the program's output ends.  This is
 ; gross, but in practice it should work.
 
-(defparameter *tshell-exit-line*   "HORRIBLE_STRING_TO_DETECT_END_OF_TSHELL_COMMAND")
-(defparameter *tshell-status-line* "HORRIBLE_STRING_TO_DETECT_TSHELL_EXIT_STATUS")
-(defparameter *tshell-pid-line*    "TSHELL_PID")
+(defvar *tshell-exit-line*   "HORRIBLE_STRING_TO_DETECT_END_OF_TSHELL_COMMAND")
+(defvar *tshell-status-line* "HORRIBLE_STRING_TO_DETECT_TSHELL_EXIT_STATUS")
+(defvar *tshell-pid-line*    "TSHELL_PID")
 
 
 ; We actually use two bash processes.  *tshell* runs the programs.
 ; *tshell-killer* is only used to kill programs that *tshell* is running.
 
-(defvar *tshell*)
-(defvar *tshell-killer*)
+; Bug fix 2013-09-17: these were formerly uninitialized defvars, but Matt
+; pointed out that tshell-ensure is assuming they are initialized, so set
+; them to nil.
+
+(defvar *tshell* nil)
+(defvar *tshell-killer* nil)
 
 ; I added another bash process for background jobs.  This seems easier than
 ; running them with *tshell*.
 
-(defvar *tshell-bg*)
+(defvar *tshell-bg* nil)
 
 
 (defun tshell-stop ()
   ;; Stops any tshell processes that are running.
 
-  #-Clozure
+  #-(and Clozure (not mswindows))
   ;; BOZO maybe eventually add support for other Lisps
   nil
 
-  #+Clozure
+  #+(and Clozure (not mswindows))
   (progn (ignore-errors
            (when *tshell*
              (tshell-debug "TSHELL-STOP: stopping *tshell*~%")
@@ -80,11 +83,11 @@
 (defun tshell-start ()
   ;; Stops any tshell processes and starts new ones.
 
-  #-Clozure
+  #-(and Clozure (not mswindows))
   ;; BOZO maybe eventually add support for other Lisps
   nil
 
-  #+Clozure
+  #+(and Clozure (not mswindows))
   (progn (tshell-debug "TSHELL-START: killing old processes~%")
          (tshell-stop)
          (tshell-debug "TSHELL-START: starting *tshell*~%")
@@ -108,9 +111,9 @@
          nil))
 
 (defun tshell-check ()
-  #-Clozure
+  #-(and Clozure (not mswindows))
   t
-  #+Clozure
+  #+(and Clozure (not mswindows))
   (and (ccl::external-process-p *tshell*)
        (ccl::external-process-p *tshell-killer*)
        (ccl::external-process-p *tshell-bg*)
@@ -120,10 +123,10 @@
 
 (defun tshell-ensure ()
   ;; Stops any tshell processes and starts new ones.
-  #-Clozure
+  #-(and Clozure (not mswindows))
   ;; BOZO eventually add support for other Lisps
   nil
-  #+Clozure
+  #+(and Clozure (not mswindows))
   (unless (tshell-check)
     (tshell-debug "TSHELL-START: starting *tshell*~%")
     (setf *tshell* (ccl::run-program "/bin/bash" nil
@@ -164,7 +167,7 @@
     (declare (ignore pos))
     val))
 
-#+Clozure
+#+(and Clozure (not mswindows))
 (defun tshell-kill (pid)
   ;; Use the tshell-killer process to try to kill process PID.
   (tshell-debug "TSHELL-KILL: killing ~a.~%" pid)
@@ -203,46 +206,16 @@
 
 
 
-(defun tshell (cmd &key (print 't) (save 't))
-
-; (TSHELL CMD :PRINT [t/nil] :SAVE [t/nil]) --> (FINISHEDP STATUS LINES)
-;
-; Inputs:
-;
-;    CMD should be an ordinary shell command that takes no input and does not
-;    attempt to do any I/O redirection.  It can have arguments, e.g., you can
-;    write something like "echo hello" here.
-;
-;    :PRINT says whether to print the lines produced by CMD as they are
-;    produced.  The default is T.
-;
-;    :SAVE says whether to buffer the lines produced by CMD and return them as
-;    LINES.  The default is T.  You can set :SAVE NIL if you want to use less
-;    memory and don't care about inspecting the lines programmatically.
-;
-;    Note that :SAVE and :PRINT are independent from one another.  You can
-;    print without saving, save without printing, or do both.
-;
-; Outputs:
-;
-;    FINISHEDP is T if the command completed execution normally, or is NIL if
-;    the command was aborted via interrupting.
-;
-;    STATUS is the exit status code of the command (e.g., typically 0 means
-;    success and some non-0 value means failure).  It is only meaningful if
-;    FINISHEDP is T.
-;
-;    LINES are a list of strings which represent the output of the command,
-;    (both to standard output and standard error.)  Note that LINES will just
-;    be NIL when you set :SAVE NIL.
+(defun tshell-call-fn (cmd print save)
+  ;; See the documentation in tshell.lisp.
 
   (unless (tshell-check)
     (error "Invalid *tshell*, *tshell-killer*, or *tshell-bg* -- did you call (tshell-start)?"))
 
-  #-Clozure
+  #-(and Clozure (not mswindows))
   (error "Oops, TSHELL isn't implemented for this Lisp.")
 
-  #+Clozure
+  #+(and Clozure (not mswindows))
   (let* ((tshell-in     (ccl::external-process-input-stream *tshell*))
          (tshell-out    (ccl::external-process-output-stream *tshell*))
          (tshell-err    (ccl::external-process-error-stream *tshell*))
@@ -359,10 +332,10 @@
   (unless (tshell-check)
     (error "Invalid *tshell*, *tshell-killer*, or *tshell-bg* -- did you call (tshell-start)?"))
 
-  #-Clozure
+  #-(and Clozure (not mswindows))
   (error "Oops, TSHELL isn't implemented on this Lisp.")
 
-  #+Clozure
+  #+(and Clozure (not mswindows))
   (let* ((tshell-bg-in (ccl::external-process-input-stream *tshell*))
          (nl  (coerce (list #\Newline) 'string))
          (cmd (concatenate 'string "(" cmd ") &" nl)))

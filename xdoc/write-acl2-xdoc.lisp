@@ -41,7 +41,7 @@
   "Table with entries (char . char-list) for substituting characters.")
 
 (defconst *xdoc-doc-markup-table*
-  '(("-" nil .    "--")
+  '(("-" nil .    "&mdash;")
     ("B" nil .  "<b>~st</b>")
     ("BF" nil .  "~%<code>")
     ("BID" nil .    "")      ;begin implementation dependent
@@ -67,13 +67,18 @@
 ; A: hrmn.  not supported right now.  I'm just going to put in [image] until
 ; I add support for it.
 
-;    ("GIF" nil . "<img src=~st></img>") ;gif files; e.g., ~gif[\"foo.gif\" align=top]
-    ("GIF" nil . "[image]") ;gif files; e.g., ~gif[\"foo.gif\" align=top]
+    ("GIF" nil . "<img src='~st' />") ;gif files; e.g., ~gif[\"foo.gif\" align=top]
+;    ("GIF" nil . "[image]") ;gif files; e.g., ~gif[\"foo.gif\" align=top]
 
     ("I" nil .  "<i>~st</i>")
     ("ID" nil .    "")       ;implementation dependent
-    ("IL" t .  "@(see ~sc)")
-    ("ILC" t .  "<tt>@(see ~sc)</tt>")
+
+; The ACL2 documentation prints out ~ilc[] links in fixed-width font all the
+; time, but I sort of dislike that and would rather just print them in the same
+; font.  So I arbitrarily choose to treat ~il and ~ilc the same.
+
+    ("IL" t .  "<see topic=\"@(url ~sc)\">~st</see>")
+    ("ILC" t .  "<see topic=\"@(url ~sc)\">~st</see>")
     ("L" t .  "See @(see ~sc)")
     ("NL" nil .  "<br/>~%")
     ("PAR" nil .  "<p/>~%~%")
@@ -91,8 +96,8 @@
 
 ; A: replacing images with [image] for now, I'll add support somehow.
 
-;    ("WARN" nil . "<a href=\"A_Tiny_Warning_Sign.html\"><img src=twarning.gif></img></a>")
-    ("WARN" nil . "[image]")
+    ("WARN" nil . "<see topic='ACL2____A_02Tiny_02Warning_02Sign'><img src='twarning.gif'/></see>")
+;    ("WARN" nil . "[image]")
 
 ; Jared note: these don't seem quite right.
 ;    ("CLICK-HERE" t .  "Click <a href=\"~sc\">here</a>")
@@ -100,15 +105,15 @@
     ("CLICK-HERE" t .  "Click <see topic=\"@(url ~sc)\">here</see>")
     ("PCLICK-HERE" t .  "click <see topic=\"@(url ~sc)\">here</see>")
 
-;    ("FLY" t .  "<a href=\"~sc\"><img src=flying.gif></img></a>")
-;    ("LARGE-FLY" t .  "<a href=\"~sc\"><img src=large-flying.gif></img></a>")
-;    ("WALK" t .  "<a href=\"~sc\"><img src=walking.gif></img></a>")
-;    ("LARGE-WALK" t .  "<a href=\"~sc\"><img src=large-walking.gif></img></a>")
+    ("FLY" t .  "<see topic=\"@(url ~sc)\"><img src='flying.gif'/></see>")
+    ("LARGE-FLY" t .  "<see topic=\"@(url ~sc)\"><img src='large-flying.gif'/></see>")
+    ("WALK" t .  "<see topic=\"@(url ~sc)\"><img src='walking.gif'/></see>")
+    ("LARGE-WALK" t .  "<see topic=\"@(url ~sc)\"><img src='large-walking.gif'/></see>")
 
-    ("FLY" t .  "[image]")
-    ("LARGE-FLY" t .  "[image]")
-    ("WALK" t .  "[image]")
-    ("LARGE-WALK" t .  "[image]")
+;    ("FLY" t .  "[image]")
+;    ("LARGE-FLY" t .  "[image]")
+;    ("WALK" t .  "[image]")
+;    ("LARGE-WALK" t .  "[image]")
 
 ; XDOC question: Does this handling of "URL" seem OK?  I think it's
 ; appropriate, rather than @(url ...), since it's not for symbols; but I'm not
@@ -243,19 +248,19 @@ an xdoc file.  See :DOC markup")
             (xdoc-alist1 (cdr doc-alist) fmt-alist channel state
                          (cons entry acc))))))
 
-(defun filter-doc-alist (skip-topics doc-alist)
+(defun filter-doc-alist (skip-topics-fal doc-alist)
   (if (atom doc-alist)
       nil
     (let* ((doc-tuple (car doc-alist))
            (name (if (stringp (nth 0 doc-tuple))
                      (intern (nth 0 doc-tuple) "ACL2")
                    (nth 0 doc-tuple))))
-      (if (member name skip-topics)
-          (filter-doc-alist skip-topics (cdr doc-alist))
+      (if (hons-get name skip-topics-fal)
+          (filter-doc-alist skip-topics-fal (cdr doc-alist))
         (cons doc-tuple
-              (filter-doc-alist skip-topics (cdr doc-alist)))))))
+              (filter-doc-alist skip-topics-fal (cdr doc-alist)))))))
 
-(defun write-xdoc-alist-fn (write-p return-p skip-topics state)
+(defun write-xdoc-alist-fn (write-p return-p skip-topics-fal state)
   (acl2::state-global-let*
    ((acl2::fmt-hard-right-margin 500 acl2::set-fmt-hard-right-margin)
     (acl2::fmt-soft-right-margin 480 acl2::set-fmt-soft-right-margin))
@@ -265,7 +270,7 @@ an xdoc file.  See :DOC markup")
       (channel state)
       (open-output-channel :string :object state)
       (acl2::er-let*
-       ((result (xdoc-alist1 (filter-doc-alist skip-topics doc-alist)
+       ((result (xdoc-alist1 (filter-doc-alist skip-topics-fal doc-alist)
                              (xdoc-fmt-alist doc-alist nil)
                              channel state nil)))
        (pprogn (close-output-channel channel state)
@@ -277,8 +282,8 @@ an xdoc file.  See :DOC markup")
 
 (defmacro acl2::write-xdoc-alist (&key (write-p 't)
                                        (return-p 'nil)
-                                       (skip-topics 'nil))
-  `(write-xdoc-alist-fn ,write-p ,return-p ,skip-topics state))
+                                       (skip-topics-fal 'nil))
+  `(write-xdoc-alist-fn ,write-p ,return-p ,skip-topics-fal state))
 
 ; Utility for accessing element of xdoc-alist:
 

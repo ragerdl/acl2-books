@@ -27,13 +27,48 @@
 
 (in-package "XDOC")
 (include-book "import-acl2doc")  ;; For base acl2 documentation
-(program)
 
 (defxdoc xdoc
-  :short "<i>XDOC</i> is a tool for documenting ACL2 libraries.  It is meant to
-replace ACL2 facilities such as @(see defdoc), @(':doc'), and so on."
+  :short "<i>XDOC</i> is a tool for documenting ACL2 books.  You can use it to
+access documentation about ACL2 and its books, to document your own books, and
+to create custom web-based manuals.  It is intended as a replacement for ACL2
+facilities like @(see defdoc), @(':doc'), and so on."
 
-  :long "<p>To use the XDOC system, the first step is:</p>
+  :long "<h3>Getting Documentation</h3>
+
+<p>Most of the documentation below is about using XDOC to document your own
+@(see acl2::books) and create manuals.  If you just want to browse the
+documentation, you probably don't need to read any of this!  Instead, see
+either:</p>
+
+<ul>
+
+<li><b>Online version.</b> If you expect to have an internet connection while
+using the documentation, you may be happy with the <a
+href='http://fv.centtech.com/acl2/latest/doc/'>online XDOC manual</a> hosted by
+<a href='http://www.centtech.com/'>Centaur Technology</a>.  This version covers
+the latest released version of ACL2 and the corresponding version of the <a
+href='http://code.google.com/p/acl2-books/'>ACL2 Community Books</a>.</li>
+
+<li><b>Local version.</b> If you sometimes work without an internet connection,
+or are using development snapshots of ACL2 and need up-to-date documentation,
+you can build a local version of the documentation.  You first need to build
+ACL2(h), then certify the @('centaur/doc') book as follows:
+
+@({
+  cd acl2-sources/books
+  make USE_QUICKLISP=1 centaur/doc.cert
+})
+
+After this is built, the manual should be available at:
+
+@({acl2-sources/books/centaur/manual/index.html})</li>
+
+</ul>
+
+<h3>Documenting your Books</h3>
+
+<p>To use XDOC to document your own books, the first step is:</p>
 
 @({
  (include-book \"xdoc/top\" :dir :system)
@@ -44,25 +79,37 @@ complete interface to the XDOC system, including:</p>
 
 <ul>
 
-<li>@(see defxdoc), the basic command for adding documentation &mdash;
-the XDOC alternative to ACL2's @(see defdoc) command.</li>
+<li>@(see defxdoc) and @(see defsection), which are the basic commands for
+adding documentation &mdash; the XDOC alternatives to ACL2's @(see defdoc)
+command.</li>
 
-<li>The @(':xdoc') command for viewing documentation within the terminal &mdash;
-the XDOC alternative to ACL2's @(':doc') command.</li>
-
-<li>The @(see save) command, which exports all XDOC documentation into XML
-files that can be viewed in a web browser or transformed into formats like
-HTML.</li>
+<li>The @(see save) command, which can be used to create web-based manuals for
+your libraries.</li>
 
 </ul>
 
-<p>The @(':xdoc') command consults the XDOC database <b>and</b> ACL2's
-@(':doc') database, so you can always use @(':xdoc foo') without having to know
-which documentation system was used to document the topic.</p>")
+<p>The @('xdoc/top') book hijacks the @(':doc') command by installing a new
+<see topic='@(url ld-keyword-aliases)'>LD keyword alias</see>.  This way,
+you (and your users) can see both ordinary ACL2 documentation and XDOC
+documentation from the terminal by just using @(':doc'), without having to know
+which documentation system was used to document which topic.</p>
 
+<box><p><b><color rgb='#ff0000'>NEW</color></b> (experimental): When writing
+documentation, you can now automatically have XDOC topics displayed as you
+submit new @(see defxdoc) forms&mdash;just add:</p>
+
+@({
+ (include-book \"xdoc/debug\" :dir :system)
+})
+
+<p>to your @(see acl2::acl2-customization) file, or include it while you are
+developing your book.  Afterward, whenever you submit each @(see defxdoc) form,
+it will automatically be displayed in the terminal, showing you any markup
+problems and giving you a quick, text-mode preview.</p></box>")
+
+(local (set-default-parents xdoc))
 
 (defxdoc defxdoc
-  :parents (xdoc)
   :short "Add documentation to the @(see xdoc) database."
 
   :long "<box><p>Note: @('defxdoc') is very basic.  You will usually want to
@@ -85,27 +132,26 @@ command.</p>
 @({
  (defxdoc duplicity
    :parents (std/lists defsort count no-duplicatesp)
-   :short \"@(call duplicity) counts how many times the element @('a') occurs
-within the string @('x').\"
-   :long \"<p>This function is similar to ACL2's built-in @('count') function
-but is more limited:</p>  ...\")
+   :short \"@(call duplicity) counts how many times the
+            element @('a') occurs within the string @('x').\"
+   :long \"<p>This function is similar to ACL2's built-in
+          @('count') function but is more limited:</p>  ...\")
 })
 
-<p>All keyword arguments are optional.</p>
+<p>The @('name') of each documentation topic must be a symbol.  All of the
+keyword arguments are optional:</p>
 
 <ul>
 
-<li>@('name') is the name of this documentation topic, and should be a
-symbol.</li>
-
-<li>@('parents') let you associate this documentation with other topics.  As
-shown in the above example, a topic can have many parents.  Note that circular
-parents are not allowed and will lead to errors when generating
-documentation.</li>
+<li>@('parents') let you associate this documentation with other topics.  A
+topic may have many parents, but circular chains of parents are not allowed and
+will lead to errors when generating manuals.  If no @(':parents') are given
+explicitly, the <see topic='@(url set-default-parents)'>default parents</see>
+will be used.</li>
 
 <li>@('short') should be a short description of this topic that is suitable for
-inlining in other pages.  For instance, it is displayed in the full index, and
-as \"hover\" text in the navigation page.</li>
+inlining in other pages.  For instance, it may be displayed in subtopic listing
+and in \"hover\" text on navigation pages.</li>
 
 <li>@('long') should be the full, detailed documentation for this topic.</li>
 
@@ -130,12 +176,12 @@ use @(see defxdoc-raw) instead.</p>")
 
 
 (defxdoc markup
-  :parents (xdoc)
-  :short "XDOC documentation strings are mainly written in a simple XML markup
-language."
+  :short "The <a href='http://en.wikipedia.org/wiki/Xml'>XML</a> markup
+language that is the basis of XDOC documentation strings."
 
-  :long "<p>XML is basically similar to HTML, but requires that tags begin and
-end in balance.</p>
+  :long "<p>XDOC uses an XML markup language that is similar to a subset of <a
+href='http://en.wikipedia.org/wiki/HTML'>HTML</a>.  Note that in XML, beginning
+and ending tags really need to be balanced.</p>
 
 <h3>Formatting Text</h3>
 
@@ -152,10 +198,12 @@ end in balance.</p>
 <h3>Displaying Source Code</h3>
 
 <p>The @(see preprocessor) allows you to insert function definitions, theorems,
-etc., from the ACL2 world.  But sometimes you want to write other kinds of code
-fragments as examples.</p>
+etc., from the ACL2 world.  This can help you avoid having to copy and paste
+definitions into your documentation, which can help to keep your documentation
+up to date.</p>
 
-<p>The raw markup options are:</p>
+<p>But sometimes you want to write other kinds of code fragments as examples.
+The raw markup options are:</p>
 
 <ul>
 
@@ -168,29 +216,29 @@ and \"preformatted,\" i.e., newlines and spaces should be preserved.</li>
 </ul>
 
 <p><b>However</b>, it's often better to use the preprocessor's
-<tt>@@('...')</tt> and <tt>@@({...})</tt> macros.  These are nice because they
-automatically escape special HTML characters like &lt; into &amp;lt;, and also
-automatically add hyperlinks to documented functions.</p>
+<tt>@@('...')</tt> and <tt>@@({...})</tt> macros, respectively.  These are nice
+because they automatically escape special HTML characters like &lt; into
+&amp;lt;, and also automatically add hyperlinks to documented functions.</p>
 
-<p>If you do decide to write raw @('<code>') blocks, your lisp forms should
-usually be <b>indented one space</b> to prevent Emacs problems.  For
-instance:</p>
+<p>Whenever you include Lisp code fragments in your documentation, you should
+usually keep everything <b>indented one space</b> to prevent Emacs problems.
+For instance:</p>
 
 @({
- (defxdoc foo
-   :long \"<h3>How to format @('<code>') blocks</h3>
-
- <p>GOOD -- the form is indented one space:</p>
- <code>
-  (my-lisp-form (foo ...)
-                (bar ...))
- </code>
-
- <p>BAD -- the form is directly on the left-margin:</p>
- <code>
- (my-lisp-form (foo ...)
-               (bar ...))
- </code>
+|(defxdoc foo
+|  :long \"<h3>How to format @('<code>') blocks</h3>
+|
+|<p>GOOD -- the form is indented one space:</p>
+|<code>
+| (my-lisp-form (foo ...)
+|               (bar ...))
+|</code>
+|
+|<p>BAD -- the form is directly on the left-margin:</p>
+|<code>
+|(my-lisp-form (foo ...)
+|              (bar ...))
+|</code>
 })
 
 <p>Without this leading space, Emacs can become confused and think that
@@ -222,10 +270,11 @@ Technology</a>.</p>
 
 <p>For section headings,</p>
 <ul>
- <li>@('<h1>') creates the biggest heading,</li>
- <li>@('<h2>') the next biggest,</li>
- <li>... and so on ...</li>
- <li>@('<h5>') is the smallest heading.</li>
+ <li>@('<h1>') creates the biggest heading:<h1>H1 Example</h1></li>
+ <li>@('<h2>') the next biggest:<h2>H2 Example</h2></li>
+ <li>@('<h3>') a medium-sized heading:<h3>H3 Example</h3></li>
+ <li>@('<h4>') the second smallest:<h4>H4 Example</h4></li>
+ <li>@('<h5>') the smallest heading:<h5>H5 Example</h5></li>
 </ul>
 
 <p>@('<p>') tags should be put around paragraphs.</p>
@@ -290,7 +339,6 @@ support in the future, and maybe other tags that users want.</p>")
 
 
 (defxdoc preprocessor
-  :parents (xdoc)
   :short "In addition to its @(see markup) language, XDOC includes a
 preprocessor which can be used to interpret certain directives of the form
 @('@(...)')."
@@ -408,32 +456,47 @@ need to be escaped.</p>")
 
 
 (defxdoc save
-  :parents (xdoc)
-  :short "Saves the XDOC database as @('.xml') files (which can also be
-translated into HTML or other formats)."
+  :short "Saves the XDOC database into files for web browsers, etc."
 
   :long "<p>Once you have documented your library with @(see defxdoc), you may
 wish to create a manual that can be viewed from a web browser.</p>
 
-
 <h3>Saving a Manual</h3>
 
-<p>The @('xdoc::save') command allows you to save all of the documented topics
-as @('.xml') files.  Here's an example:</p>
+<p>The @('xdoc::save') command allows you to export all currently-loaded
+documented topics from ACL2.  Here's a basic example:</p>
 
 @({
+ ;; get documentation loaded
+ (include-book \"my-library1\")
+ (include-book \"my-library2\")
+ ;; save the manual
  (xdoc::save \"/home/jared/mylib-manual\")
 })
 
-<p>The argument is the name of a directory where the documentation should be
-saved.  If the directory does not exist, it will be created.  If there are
-files in the directory, they <color rgb=\"#ff0000\">may be
-overwritten</color>.</p>
+<p>The only required argument is the name of a directory where the
+documentation should be saved.  If the directory does not exist, it will be
+created.  If there are files in the directory, they <color rgb=\"#ff0000\">may
+be overwritten</color>.</p>
+
+<h3>Types of Manuals</h3>
+
+<p>XDOC can actually generate two kinds of manuals.</p>
+
+<ul>
+<li>By default, a @(see fancy-manual) is produced.</li>
+
+<li>Alternately, you can create a @(see classic-manual) by using
+@(':type :classic') in your save command.</li> </ul>")
 
 
-<h3>Structure of a Manual</h3>
+(defxdoc classic-manual
+  :parents (save)
+  :short "Structure of a @(':type :classic') manual."
 
-<p>The resulting @('mylib-manual') directory includes:</p>
+  :long "<p>If you run @(see save) with @(':type :classic'), it will write out
+a manual in the \"classic\" format.  In this case, the resulting manual
+directory will include:</p>
 
 <ul>
 
@@ -448,8 +511,8 @@ using your web browser.</li>
 
 </ul>
 
-<p>Many web browsers can now directly display XML files.  So, you may be able
-to view @('preview.html') without any additional steps.</p>
+<p>Many web browsers can directly display XML files, so you may be able to view
+@('preview.html') without any additional steps.</p>
 
 
 <h3>HTML and Other Formats</h3>
@@ -482,35 +545,55 @@ welcome modifications to file <tt>support/Makefile-trans</tt> if you wish to
 use a version we do not currently support.</p>")
 
 
+(defxdoc fancy-manual
+  :parents (save)
+  :short "Structure of a @(':type :fancy') manual."
+
+  :long "<p>By default, @(see save) will create a manual in the new, \"fancy\"
+format, which extensively uses JavaScript to provide rich documentation with
+dynamic navigation, quick jump-to links, and so forth.</p>
+
+<p>In many ways, a fancy manual is simpler than a @(see classic-manual).
+Instead of generating thousands of files ahead of time, we basically just write
+the XDOC database out into JSON format and then use JavaScript to do all of the
+layout and organization.</p>")
+
+
 (defxdoc emacs-links
-  :parents (xdoc)
-  :short "Instructions for integrating XDOC web pages with Emacs."
+  :short "Instructions for integrating XDOC web pages with <a
+  href='http://www.gnu.org/software/emacs/'>Emacs</a>."
 
   :long "<p>@(csee preprocessor) directives such as @('@(def get-xdoc-table)')
-result in the introduction of special links for Emacs.  It may be possible to
-configure your web browser so that clicking on these links will cause Emacs to
-directly open up the appropriate source file and jump to the named function.</p>
-
-<p>Here is what such a link looks like:</p>
+result in the introduction of special links for Emacs.  Here's what these links
+look like:</p>
 
 @(def get-xdoc-table)
 
-<p>How does this work?</p>
+<p>Depending on your environment, it <b>may</b> be easy to configure your web
+browser so that clicking on these links will cause Emacs to directly open up
+the appropriate source file and jump to the named function.</p>
+
+<p>The basic idea is:</p>
 
 <ul>
 
-<li>These Emacs links point to @('xdoc-link') files.</li>
+<li>Each Emacs link generates a <a
+href='https://en.wikipedia.org/wiki/Data_URI_scheme'>Data URIs</a> that tells
+your web browser to download a new, generated file whose <a
+href='https://en.wikipedia.org/wiki/Internet_media_type'>MIME type</a> is
+@('application/x-acl2-xdoc-link').</li>
 
-<li>We instruct your web browser to send these files to Emacs.</li>
+<li>You configure your web browser to send @('application/x-acl2-xdoc-link')
+files to Emacs.</li>
 
-<li>We instruct Emacs to carry out a tags search instead of loading these
-files.</li>
+<li>You configure your Emacs to carry out a tags search instead of loading
+these files.</li>
 
 </ul>
 
 <p>The net effect is that clicking on these links will send you directly to the
-desired function in the source code.  This can be <b>really slick</b>, and
-depending on your web browser, it may not be too hard to set up.</p>
+desired function in the source code.  This is <b>really slick</b> if you can
+get it working.</p>
 
 
 <h2>Configuring Emacs</h2>
@@ -518,8 +601,8 @@ depending on your web browser, it may not be too hard to set up.</p>
 <h4>Loading the XDOC Elisp</h4>
 
 <p>The XDOC directory includes a file called @('xdoc.el'), which tells emacs
-what to do with these @('xdoc-link') files.  To tell emacs to load this file at
-startup, you can just add a command to your @('.emacs') file such as:</p>
+what to do with these xdoc-link files.  To tell emacs to load this file at
+startup, you can just add a command to your @('.emacs') file like:</p>
 
 @({
  (load \"/path/to/acl2/books/xdoc/xdoc.el\")
@@ -608,54 +691,71 @@ as a new buffer.</p>
 
 <h2>Configuring the Web Browser</h2>
 
-<p>The last thing we need to do is instruct your web browser to send
-@('xdoc-link') files to Emacs.</p>
+<p>The last thing we need to do is instruct your web browser to send xdoc-link
+files to Emacs.</p>
 
 <p>How to do this depends on your web browser and/or operating system.  In some
 cases it may be hard to pass command-line options to emacs directly, so you may
 find it useful to use the script @('emacsclient-wrapper.sh'), found in the xdoc
 directory.</p>
 
-<h4>Chrome on KDE</h4>
+<p>The basic starting point is probably to try to click on an emacs link like
+@(srclink append) and try to tell your browser to open it with the
+@('emacsclient-wrapper.sh') script.  If your browser opens it with some other
+program, you might need to edit the default file associations of your operating
+system or window manager.</p>")
 
-<p>I don't know of any way to configure MIME types directly in Chrome.
-However, a two step process seems to work:</p>
 
-<ul>
+(defxdoc go.xdoc-link
+  :parents (emacs-links)
+  :short "Trivial web service provided by @('fv.centtech.com') for resolving
+@(see emacs-links)."
 
-<li>I downloaded a @('.xdoc-link') file from Chrome.  In the downloads bar (at
-the bottom), I was able to tell Chrome to <b>Always Open Files of this
-Type</b>.</li>
+  :long "<p>Historically, @(see emacs-links) were implemented by writing out a
+separate @('xdoc-link') file for every tags-search that we wanted to support.
+To avoid writing out these thousands of files, we now just implement a simple
+web service at @('fv.centtech.com').</p>
 
-<li>This incorrectly opened the @('.xdoc-link') file in kwrite.  However, I
-then went into KDE's <i>Dolphin</i> file manager, right-clicked on the file, and
-said <b>Open with &gt; Other...</b>.  Here I was able to choose the @('emacsclient-wrapper.sh') script.</li>
+<p>The basic idea is that if you just go to:</p>
 
-</ul>
+@('http://fv.centtech.com/cgi-bin/go.xdoc-link?name=append')
 
-<p>This seems sufficient; the only unfortunate effect is that my downloads
-folder gets filled up with @('.xdoc-link') files.</p>
+<p>Then it will generate an appropriate @('.xdoc-link') file that is flagged
+with the right mime-type.</p>
 
-<h4>Firefox on KDE</h4>
-
-<p>In previous versions of Firefox I was able to use the <a
-href=\"https://addons.mozilla.org/en-US/firefox/addon/4498\">MIME Edit</a>
-Firefox plugin, but this now seems to be defunct.</p>
-
-<h2>Possibly Necessary: Configuring the Web Server</h2>
-
-<p>This step shouldn't be needed if you're viewing the documentation on your
-hard drive.  But if you are using a web server like Apache to serve your
-documentation, you may need to use something like:</p>
+<p>If you prefer to use your own web server, you can recreate this service by
+putting the following, trivial script into your cgi-bin:</p>
 
 @({
-AddType application/x-acl2-xdoc-link .xdoc-link
-})
+    #!/usr/bin/perl
 
-<p>to your @('httpd.conf') or an @('.htaccess') file as appropriate.  Without
-this step, your web server might report that @('.xdoc-link') files are just
-text files to the web browser, and the web browser will not load them with the
-content-handler.</p>")
+    use warnings;
+    use strict;
+    use CGI qw(:standard);
+
+    my $name = param(\"name\") || \"APPEND\";
+
+    $| = 1;
+
+    print <<END;
+    Content-Type: application/x-acl2-xdoc-link .xdoc-link
+
+    ; This is an XDOC Link file.
+    ; Ordinarily, you should not see this file.
+    ;
+    ; If you are viewing this file in a web browser, you probably
+    ; have not configured your web browser to send .xdoc-link files
+    ; to Emacs.
+    ;
+    ; If you are viewing this file in Emacs, you probably have not
+    ; loaded xdoc.el from the xdoc/ directory.
+    ;
+    ; Please see the XDOC manual for more information.
+
+    $name
+
+    END
+})")
 
 
 
@@ -704,7 +804,6 @@ with keyword arguments.  See also @(see extract-keyword-from-args).</p>
 
 
 (defxdoc defsection
-  :parents (xdoc)
   :short "Fancy @('(encapsulate nil ...)') with a name and @(see xdoc)
 support."
 
@@ -802,7 +901,6 @@ onto the end of the documentation for @('foo').</p>")
 
 
 (defxdoc defsection-progn
-  :parents (xdoc)
   :short "Fancy @('(progn ...)') with a name and @(see xdoc) support."
 
   :long "<p>The @('defsection-progn') macro is like @(see defsection) except
@@ -818,7 +916,6 @@ not introduce a new local scope, but a @('defsection') does.</p>")
 
 
 (defxdoc test-of-entities
-  :parents (xdoc)
   :short "Placeholder topic for testing out HTML entity support in XDOC."
   :long "<p>Here are the entities that XDOC allows:</p>
 
@@ -837,3 +934,53 @@ not introduce a new local scope, but a @('defsection') does.</p>")
 <li>@('&mdash;') becomes &mdash;</li>
 <li>@('&rarr;')  becomes &rarr;</li>
 </ul>")
+
+
+
+(defxdoc set-default-parents
+  :short "Set up default parents to use for @(see xdoc)."
+
+  :long "<p>When documenting a book of inter-related functions, you may
+sometimes wish to use the same @(':parents') across many @(see defxdoc) or
+@(see defsection) commands.  This can sometimes get tedious.</p>
+
+<p>The macro @(call set-default-parents) can be used to set up a default list
+of parent topics to be automatically used by commands such as @(see defxdoc)
+and @(see defsection).</p>
+
+<p>Basic Example:</p>
+
+@({
+   (local (set-default-parents fox-p))
+
+   (defxdoc make-fox           ;; use default :parents, (fox-p)
+     :short ...
+     :long ...)
+
+   (defsection feed-fox        ;; use default :parents, (fox-p)
+     :short ...
+     :long ...)
+
+   (defsection chase-mouse     ;; use explicit :parents, (fox-p mouse-p)
+     :parents (fox-p mouse-p)
+     :short ...
+     :long ...)
+
+   (local (set-default-parents fox-p hawk-p))
+
+   (defsection bother-hawk     ;; use default :parents, (fox-p hawk-p)
+     :short ...
+     :long ...)
+
+   (local (set-default-parents nil))
+
+   (defxdoc zebra-p            ;; use default :parents, nil
+     :short ...
+     :long ...)
+})
+
+<p>Note that @('set-default-parents') is just a macro that expands to a @(see
+table) event.  It's good practice to only <b>locally</b> set the default
+parents&mdash;otherwise the default parents can \"leak\" from your book and
+lead you to inadvertently set the parents of other, unrelated topics.</p>")
+

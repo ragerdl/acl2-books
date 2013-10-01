@@ -25,9 +25,13 @@
 (include-book "date")
 (include-book "getpid")
 (include-book "ls")
+(include-book "mkdir")
+(include-book "file-types")
 (include-book "tempfile")
+(include-book "rmtree")
 
 (defxdoc oslib
+  :parents (acl2::interfacing-tools)
   :short "Operating System Utilities Library"
 
   :long "<p>This is a collection of ACL2 functions that allow you to do various

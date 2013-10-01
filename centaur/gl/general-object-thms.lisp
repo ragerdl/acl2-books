@@ -1,10 +1,26 @@
-
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
-
 (include-book "gtype-thms")
 (include-book "general-objects")
-
 
 
 (defthmd generic-geval-g-boolean
@@ -48,6 +64,13 @@
                   (bfr-eval (general-boolean-value x) (car env))))
   :hints (("goal" :in-theory (enable generic-geval)))
   :rule-classes ((:rewrite :backchain-limit-lst 0)))
+
+(defthm pbfr-depends-on-of-general-boolean-value
+  (implies (and (not (gobj-depends-on k p x))
+                (general-booleanp x))
+           (not (pbfr-depends-on k p (general-boolean-value x))))
+  :hints(("Goal" :in-theory (enable general-booleanp general-boolean-value
+                                    booleanp))))
 
 
 (in-theory (disable general-booleanp general-boolean-value))
@@ -147,6 +170,18 @@
 (in-theory (disable general-number-components
                     general-numberp))
 
+(defthm pbfr-depends-on-of-general-number-components
+  (implies (and (general-numberp x)
+                (not (gobj-depends-on k p x)))
+           (b* (((mv rn rd in id) (general-number-components x)))
+             (and (not (pbfr-list-depends-on k p rn))
+                  (not (pbfr-list-depends-on k p rd))
+                  (not (pbfr-list-depends-on k p in))
+                  (not (pbfr-list-depends-on k p id)))))
+  :hints(("Goal" :in-theory (enable general-number-components)
+          :expand ((gobj-depends-on k p x)
+                   (general-numberp x)))))
+
 
 
 (local (defthm nth-open-when-constant-idx
@@ -154,7 +189,7 @@
                   (equal (nth n x)
                          (if (zp n) (car x)
                            (nth (1- n) (cdr x)))))))
-                       
+
 
 (defthm general-numberp-of-atom
   (implies (not (consp x))
@@ -220,6 +255,17 @@
            (< (acl2-count (general-consp-cdr x)) (acl2-count x)))
   :hints (("goal" :in-theory (enable mk-g-concrete g-concrete g-concrete->obj)))
   :rule-classes (:rewrite :linear))
+
+(defthm gobj-depends-on-of-general-consp
+  (implies (and (not (gobj-depends-on k p x))
+                (general-consp x))
+           (and (not (gobj-depends-on k p (general-consp-car x)))
+                (not (gobj-depends-on k p (general-consp-cdr x)))))
+  :hints(("Goal" :in-theory (enable general-consp
+                                    general-consp-car
+                                    general-consp-cdr
+                                    g-keyword-symbolp-def))))
+
 
 (in-theory (disable general-consp general-consp-car general-consp-cdr))
 
@@ -332,7 +378,7 @@
 
 (verify-guards
  general-concrete-obj)
-    
+
 
 ;; (defun general-concretep (x)
 ;;   (declare (xargs :guard (gobjectp x)))
@@ -361,7 +407,7 @@
   (implies (general-concretep x)
            (equal (generic-geval x env)
                   (general-concrete-obj x)))
-  :hints(("Goal" 
+  :hints(("Goal"
           :induct (general-concrete-obj x)
 
           :expand ((general-concretep x)
@@ -463,7 +509,7 @@
 
 
 
-;; (local 
+;; (local
 ;;  (defthm g-concrete-p-impl-not-general-concretep-car
 ;;    (implies (g-concrete-p x)
 ;;             (not (general-concretep (car x))))
@@ -529,7 +575,7 @@
            :in-theory (e/d** (general-concretep-def
                               (:induction generic-geval)
                               general-numberp general-booleanp
-                              general-consp eq 
+                              general-consp eq
                               atom
                               acl2::cons-car-cdr
                               concrete-gobjectp-def

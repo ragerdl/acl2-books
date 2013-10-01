@@ -1,15 +1,31 @@
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
-
 (include-book "g-if")
 (include-book "g-primitives-help")
 (include-book "symbolic-arithmetic-fns")
 (include-book "eval-g-base")
-;(include-book "tools/with-arith5-help" :dir :system)
 (local (include-book "symbolic-arithmetic"))
 (local (include-book "eval-g-base-help"))
 (local (include-book "hyp-fix-logic"))
-;(local (allow-arith5-help))
 
 (local (defthm nth-open-when-constant-idx
          (implies (syntaxp (quotep n))
@@ -58,8 +74,8 @@
                (if (zp clk)
                    (g-apply ',',fn (list ,',x))
                  (g-if test
-                       (,gfn then hyp clk)
-                       (,gfn else hyp clk))))
+                       (,gfn then . ,params)
+                       (,gfn else . ,params))))
               ((g-apply & &) (g-apply ',',fn (list ,',x)))
               ((g-var &) (g-apply ',',fn (list ,',x)))
               . ,',cases)))
@@ -111,8 +127,8 @@
 ;;          ,@gobj-encap
 ;;          (def-gobjectp-thm ,fn
 ;;            :hints `(("goal"
-;;                      :induct (,gfn ,',x hyp clk)
-;;                      :expand ((,gfn ,',x hyp clk)))
+;;                      :induct (,gfn ,',x . ,params)
+;;                      :expand ((,gfn ,',x . ,params)))
 ;;                     . ,',gobj-hints)))
        (encapsulate nil
          (local (in-theory
@@ -161,6 +177,10 @@
          ,@guard-encap
          (verify-g-guards ,fn
                           :hints ',guard-hints))
+       (def-gobj-dependency-thm ,fn
+         :hints `(("goal" :induct ,gcall
+                   :expand (,gcall)
+                   :in-theory (e/d ((:i ,gfn)) ((:d ,gfn))))))
        (encapsulate nil
          (local (in-theory (e/d* (;; gobjectp-tag-rw-to-types
                                   ;; gobjectp-gobj-fix
@@ -185,7 +205,7 @@
                                  (;; bfr-p-of-boolean
                                   general-number-components-ev
                                   (:type-prescription booleanp)
-                                  
+
                                   bfr-eval-booleanp
                                   general-boolean-value-correct
                                   bool-cond-itep-eval
@@ -197,8 +217,8 @@
          ,@corr-encap
          (def-g-correct-thm ,fn eval-g-base
            :hints `(("goal" :in-theory (enable (:induction ,gfn))
-                     :induct (,gfn ,',x hyp clk)
-                     :expand ((,gfn ,',x hyp clk)))
+                     :induct (,gfn ,',x . ,params)
+                     :expand ((,gfn ,',x . ,params)))
                     (and stable-under-simplificationp
                          '(:expand ((:with eval-g-base (eval-g-base ,',x env))
                                     (:with eval-g-base (eval-g-base nil env))
@@ -207,11 +227,11 @@
 
 
 (defmacro def-g-predicate
-  (fn cases &key 
+  (fn cases &key
       corr-hints guard-hints gobj-hints encap
       gobj-encap guard-encap corr-encap (formals '(x)))
   (declare (ignorable gobj-hints gobj-encap))
-  (def-g-predicate-fn 
+  (def-g-predicate-fn
     fn cases corr-hints guard-hints
     encap guard-encap corr-encap formals))
 
@@ -246,7 +266,7 @@
    (& t)))
 
 
-         
+
 (encapsulate nil
 
   (def-g-predicate integerp

@@ -30,6 +30,7 @@
 (include-book "xdoc/names" :dir :system)
 (include-book "str/cat" :dir :system)
 (set-state-ok t)
+
 (program)
 
 (def-ruleset tag-reasoning nil)
@@ -260,6 +261,14 @@ defined a \"compatible\" recognizer.</dd>
 <dd>These options are as in @(see xdoc).  Whatever you supply for @(':long')
 will follow some automatically generated documentation that describes the
 fields of the aggregate.</dd>
+
+<dt>:extra-field-keywords</dt>
+
+<dd>Advanced option for people who are writing extensions of @('defaggregate').
+This tells defaggregate to tolerate (and ignore) certain additional keywords in
+its fields.  The very advanced user can then inspect these fields after
+submitting the aggregate, and perhaps use them to generate additional
+events.</dd>
 
 <dt>:require</dt>
 
@@ -606,7 +615,11 @@ optimization altogether.</p>")
        (implies (force (,(da-recognizer-name name) ,(da-x name)))
                 ,(ACL2::sublis map (second require)))
        :rule-classes ,rule-classes
-       :hints(("Goal" :in-theory (enable ,(da-recognizer-name name) ,@accnames))))))
+       :hints(("Goal"
+               :in-theory
+               (union-theories
+                '(,(da-recognizer-name name) . ,accnames)
+                (theory 'defaggregate-basic-theory)))))))
 
 (defun da-make-requirements-of-recognizer-aux (name require map accnames)
   (if (consp require)
@@ -726,13 +739,226 @@ optimization altogether.</p>")
             (da-fields-autodoc name (cdr fields)))
     nil))
 
-(defun da-autodoc (name fields parents short long base-pkg state)
+(defun da-ctor-optional-fields (fields)
+  (declare (xargs :guard (formallist-p fields)))
+  (b* (((when (atom fields))
+        nil)
+       (name1 (xdoc::name-low (symbol-name (formal->name (car fields)))))
+       (len1  (length name1))
+       (acc   nil)
+       (acc   (str::revappend-chars "[:" acc))
+       (acc   (xdoc::simple-html-encode-str name1 0 len1 acc))
+       (acc   (str::revappend-chars " &lt;" acc))
+       (acc   (xdoc::simple-html-encode-str name1 0 len1 acc))
+       (acc   (str::revappend-chars "&gt;]" acc)))
+    (cons (str::rchars-to-string acc)
+          (da-ctor-optional-fields (cdr fields)))))
+
+(defconst *nl* (str::implode (list #\Newline)))
+
+(defun da-ctor-optional-call (name        ; e.g., make-honsed-foo
+                              field-strs  ; e.g., ("[:field1 <field1>]" "[field2 <field2>"])
+                              )
+  (declare (xargs :guard (and (symbolp name)
+                              (string-listp field-strs))))
+  (b* ((ctor-name (xdoc::name-low (symbol-name name)))
+       ;; +2 to account for the leading paren and trailing space after ctor-name 
+       (len       (+ 2 (length ctor-name)))
+       (pad       (str::implode (cons #\Newline (repeat #\Space len))))
+       (args      (str::join field-strs pad)))
+    (str::cat "<code>" *nl* "(" ctor-name " " args ")" *nl* "</code>")))
+
+#||
+
+(da-ctor-optional-call 'make-honsed-foo
+                       '("[:lettuce <lettuce>]"
+                         "[:cheese <cheese>]"
+                         "[:meat <meat>]"))
+
+(da-ctor-optional-call 'change-honsed-foo
+                       '("x"
+                         "[:lettuce <lettuce>]"
+                         "[:cheese <cheese>]"
+                         "[:meat <meat>]"))
+||#
+
+(defun da-ctor-autodoc (name fields honsp)
+  (declare (xargs :guard (and (symbolp name)
+                              (formallist-p fields))))
+  (b* ((foo                (da-constructor-name name))
+       (foo-p              (da-recognizer-name name))
+       (honsed-foo         (da-honsed-constructor-name name))
+       (make-foo-fn        (da-maker-fn-name name))
+       (make-foo           (da-maker-name name))
+       (make-honsed-foo    (da-honsed-maker-name name))
+       (make-honsed-foo-fn (da-honsed-maker-fn-name name))
+       (change-foo-fn      (da-changer-fn-name name))
+       (change-foo         (da-changer-name name))
+
+       (see-foo-p           (xdoc::see foo-p))
+       (plain-foo-p         (str::cat "<tt>" (xdoc::name-low (symbol-name foo-p)) "</tt>"))
+       (see-foo             (xdoc::see foo))
+       (see-honsed-foo      (xdoc::see honsed-foo))
+       (see-make-foo        (xdoc::see make-foo))
+       (see-make-honsed-foo (xdoc::see make-honsed-foo))
+       (see-change-foo      (xdoc::see change-foo))
+
+       (pkg               (symbol-package-name name))
+       (call-foo          (str::cat "@(ccall " pkg "::" (symbol-name foo) ")"))
+       (call-honsed-foo   (str::cat "@(ccall " pkg "::" (symbol-name honsed-foo) ")"))
+
+       ;; For make-foo, change-foo, etc., it's nicer to present a list of [:fld <fld>] options
+       ;; rather than just saying &rest args, which is what @(call ...) would do.
+       (opt-fields           (da-ctor-optional-fields fields))
+       (call-make-foo        (da-ctor-optional-call make-foo opt-fields))
+       (call-make-honsed-foo (da-ctor-optional-call make-honsed-foo opt-fields))
+       (call-change-foo      (da-ctor-optional-call change-foo (cons "x" opt-fields)))
+
+       (def-foo           (str::cat "@(def " pkg "::" (symbol-name foo) ")"))
+       (def-honsed-foo    (str::cat "@(def " pkg "::" (symbol-name honsed-foo) ")"))
+       (def-make-foo-fn   (str::cat "@(def " pkg "::" (symbol-name make-foo-fn) ")"))
+       (def-make-foo      (str::cat "@(def " pkg "::" (symbol-name make-foo) ")"))
+       (def-make-honsed-foo-fn (str::cat "@(def " pkg "::" (symbol-name make-honsed-foo-fn) ")"))
+       (def-make-honsed-foo    (str::cat "@(def " pkg "::" (symbol-name make-honsed-foo) ")"))
+       (def-change-foo-fn (str::cat "@(def " pkg "::" (symbol-name change-foo-fn) ")"))
+       (def-change-foo    (str::cat "@(def " pkg "::" (symbol-name change-foo) ")")))
+
+    (list
+     `(defxdoc ,foo
+        :parents (,foo-p)
+        :short ,(str::cat "Raw constructor for " see-foo-p " structures.")
+        :long ,(str::cat
+                "<p>Syntax:</p>" call-foo
+
+                "<p>This is the lowest-level constructor for " see-foo-p
+                " structures.  It simply conses together a structure with the
+                specified fields.</p>
+
+                <p><b>Note:</b> It's generally better to use macros like "
+                see-make-foo " or " see-change-foo " instead.  These macros
+                lead to more readable and robust code, because you don't have
+                to remember the order of the fields.</p>"
+
+                (if honsp
+                    (str::cat "<p>Note that we always use @(see acl2::hons) when
+                               creating " plain-foo-p " structures.</p>")
+                  (str::cat "<p>The " plain-foo-p " structures we create here
+                             are just constructed with ordinary @(see acl2::cons).
+                             If you want to create @(see acl2::hons)ed structures,
+                             see " see-honsed-foo " instead.</p>"))
+
+                "<h3>Definition</h3>
+
+                <p>This is an ordinary constructor function introduced by @(see
+                cutil::defaggregate).</p>"
+
+                def-foo))
+
+     `(defxdoc ,honsed-foo
+        :parents (,foo-p)
+        :short ,(str::cat "Raw constructor for @(see acl2::hons)ed " see-foo-p
+                          " structures.")
+        :long ,(str::cat
+                "<p>Syntax:</p> " call-honsed-foo
+
+                (if honsp
+                    (str::cat "<p>Since " see-foo-p " structures are always
+                              honsed, this is identical to " see-foo ".  We
+                              introduce it mainly for consistency with other
+                              @(see cutil::defaggregate) style structures.</p>")
+                  (str::cat "<p>This is identical to " see-foo ", except that
+                            we @(see acl2::hons) the structure we are
+                            creating.</p>"))
+
+                "<h3>Definition</h3>
+
+                <p>This is an ordinary honsing constructor introduced by @(see
+                cutil::defaggregate).</p>"
+
+                def-honsed-foo))
+
+     `(defxdoc ,make-foo
+        :parents (,foo-p)
+        :short ,(str::cat "Constructor macro for " see-foo-p " structures.")
+        :long ,(str::cat
+                "<p>Syntax:</p>" call-make-foo
+
+                "<p>This is our preferred way to construct " see-foo-p
+                " structures.  It simply conses together a structure with the
+                specified fields.</p>
+
+                <p>This macro generates a new " plain-foo-p " structure from
+                scratch.  See also " see-change-foo ", which can \"change\" an
+                existing structure, instead.</p>"
+
+                (if honsp
+                    (str::cat "<p>Note that we always use @(see acl2::hons) when
+                               creating " plain-foo-p " structures.</p>")
+                  (str::cat "<p>The " plain-foo-p " structures we create here
+                             are just constructed with ordinary @(see acl2::cons).
+                             If you want to create @(see acl2::hons)ed structures,
+                             see " see-make-honsed-foo " instead.</p>"))
+
+                "<h3>Definition</h3>
+
+                <p>This is an ordinary @('make-') macro introduced by @(see
+                cutil::defaggregate).</p>"
+
+                def-make-foo
+                def-make-foo-fn))
+
+     `(defxdoc ,make-honsed-foo
+        :parents (,foo-p)
+        :short ,(str::cat "Constructor macro for @(see acl2::hons)ed " see-foo-p
+                          " structures.")
+        :long ,(str::cat
+                "<p>Syntax:</p>" call-make-honsed-foo
+
+                (if honsp
+                    (str::cat "<p>Since " see-foo-p " structures are always
+                              honsed, this is identical to " see-make-foo ".
+                              We introduce it mainly for consistency with other
+                              @(see cutil::defaggregate)s.</p>")
+                  (str::cat "<p>This is identical to " see-make-foo ", except
+                            that we @(see acl2::hons) the structure we are
+                            creating.</p>"))
+
+                "<h3>Definition</h3>
+
+                <p>This is an ordinary honsing @('make-') macro introduced by
+                @(see cutil::defaggregate).</p>"
+
+                def-make-honsed-foo
+                def-make-honsed-foo-fn))
+
+     `(defxdoc ,change-foo
+        :parents (,foo-p)
+        :short ,(str::cat "A copying macro that lets you create new "
+                          see-foo-p " structures, based on existing structures.")
+        :long ,(str::cat
+                "<p>Syntax:</p>" call-change-foo
+
+                "<p>This is a sometimes useful alternative to " see-make-foo ".
+                It constructs a new " see-foo-p " structure that is a copy of
+                @('x'), except that you can explicitly change some particular
+                fields.  Any fields you don't mention just keep their values
+                from @('x').</p>
+
+                <h3>Definition</h3>
+
+                <p>This is an ordinary @('change-') macro introduced by @(see
+                cutil::defaggregate).</p>"
+
+                def-change-foo
+                def-change-foo-fn)))))
+
+(defun da-autodoc (name fields honsp parents short long base-pkg state)
   (declare (xargs :guard (formallist-p fields)))
   (b* (((mv main state)
         (da-main-autodoc name fields parents short long base-pkg state))
+       (ctors     (da-ctor-autodoc name fields honsp))
        (accessors (da-fields-autodoc name fields)))
-    (mv (cons main accessors) state)))
-
+    (mv (cons main (append ctors accessors)) state)))
 
 (defconst *da-valid-keywords*
   '(:tag
@@ -743,6 +969,7 @@ optimization altogether.</p>")
     :short
     :long
     :already-definedp
+    :extra-field-keywords
     ;; deprecated options
     :require
     :rest))
@@ -758,6 +985,8 @@ optimization altogether.</p>")
     (cons (formal->default (car x))
           (formallist->defaults (cdr x)))))
 
+
+#!CUTIL
 (defun defaggregate-fn (name rest state)
   (b* ((__function__ 'defaggregate)
 
@@ -771,11 +1000,14 @@ optimization altogether.</p>")
        ((mv kwd-alist field-specs)
         (extract-keywords ctx *da-valid-keywords* main-stuff nil))
 
+       (extra-field-keywords (cdr (assoc :extra-field-keywords kwd-alist)))
        ((unless (consp field-specs))
         (mv (raise "~x0: No fields given." name) state))
        ((unless (tuplep 1 field-specs))
         (mv (raise "~x0: Too many field specifiers: ~x1" name field-specs) state))
-       (efields     (parse-formals ctx (car field-specs) '(:rule-classes :default)))
+       (efields     (parse-formals ctx (car field-specs)
+                                   (append '(:rule-classes :default)
+                                           extra-field-keywords)))
        (field-names (formallist->names efields))
        (field-defaults (formallist->defaults efields))
        ((unless (no-duplicatesp field-names))
@@ -845,15 +1077,28 @@ optimization altogether.</p>")
                                                (symbol-name make-foo))
                                      name))
        ((mv doc-events state)
-        (da-autodoc name efields parents short long base-pkg state))
+        (da-autodoc name efields honsp parents short long base-pkg state))
 
        (agginfo (make-agginfo :name    name
                               :tag     tag
                               :fields  field-names
                               :efields efields))
 
+       (booleanp-of-foop (intern-in-package-of-symbol
+                          (concatenate 'string "BOOLEANP-OF-" (symbol-name foop))
+                          name))
+
        (event
         `(progn
+
+; Note: the theory stuff here a bit ugly for performance.  Using progn instead
+; of encapsulate means we don't have a local scope to work with.  Just using
+; encapsulate instead slowed down vl/parsetree by 4 seconds, and when I added
+; ordinary, local theory forms, it slowed down the book from 40 seconds to 70
+; seconds!  So that was pretty horrible.  At any rate, the union-theory stuff
+; here is ugly, but at least it's fast.
+
+           (set-inhibit-warnings "theory") ;; implicitly local
            (da-extend-agginfo-table ',agginfo)
            ,@doc-events
 
@@ -871,7 +1116,6 @@ optimization altogether.</p>")
            ,@(and
               (eq mode :logic)
               `(
-
                 ;; (defthm ,(intern-in-package-of-symbol
                 ;;           (concatenate 'string (symbol-name make-foo) "-UNDER-IFF")
                 ;;           name)
@@ -887,23 +1131,25 @@ optimization altogether.</p>")
                   :rule-classes :type-prescription
                   :hints(("Goal" :in-theory (enable ,make-foo))))
 
-                (defthm ,(intern-in-package-of-symbol
-                          (concatenate 'string "BOOLEANP-OF-" (symbol-name foop))
-                          name)
+                (defthm ,booleanp-of-foop
                   (booleanp (,foop ,x))
                   :rule-classes :type-prescription
                   :hints(("Goal" :in-theory (enable ,foop))))
 
-                ,(if (consp require)
-                     `(defthm ,foop-of-make-foo
-                        (implies (force (and ,@(strip-cadrs require)))
+                (defthm ,foop-of-make-foo
+                  ,(if (consp require)
+                       `(implies (force (and ,@(strip-cadrs require)))
                                  (equal (,foop (,make-foo ,@field-names))
                                         t))
-                        :hints(("Goal" :in-theory (enable ,foop ,make-foo))))
-                   `(defthm ,foop-of-make-foo
-                      (equal (,foop (,make-foo ,@field-names))
-                             t)
-                      :hints(("Goal" :in-theory (enable ,foop ,make-foo)))))
+                     `(equal (,foop (,make-foo ,@field-names))
+                             t))
+                  :hints(("Goal"
+                          :in-theory
+                          (union-theories
+                           '(,foop ,make-foo)
+                           (theory 'defaggregate-basic-theory))
+                          :use ((:instance ,booleanp-of-foop
+                                           (,x (,make-foo ,@field-names)))))))
 
                 ,@(and tag
                        `((defthm ,(intern-in-package-of-symbol
@@ -911,7 +1157,11 @@ optimization altogether.</p>")
                                    name)
                            (equal (tag (,make-foo ,@field-names))
                                   ,tag)
-                           :hints(("Goal" :in-theory (enable tag ,make-foo))))
+                           :hints(("Goal"
+                                   :in-theory
+                                   (union-theories
+                                    '(,make-foo)
+                                    (theory 'defaggregate-basic-theory)))))
 
                          (defthm ,(intern-in-package-of-symbol
                                    (str::cat "TAG-WHEN-" (symbol-name foop))
@@ -921,7 +1171,11 @@ optimization altogether.</p>")
                                            ,tag))
                            :rule-classes ((:rewrite :backchain-limit-lst 0)
                                           (:forward-chaining))
-                           :hints(("Goal" :in-theory (enable tag ,foop))))
+                           :hints(("Goal"
+                                   :in-theory
+                                   (union-theories
+                                    '(,foop)
+                                    (theory 'defaggregate-basic-theory)))))
 
                          (defthm ,(intern-in-package-of-symbol
                                    (str::cat (symbol-name foop) "-WHEN-WRONG-TAG")
@@ -929,7 +1183,12 @@ optimization altogether.</p>")
                            (implies (not (equal (tag ,x) ,tag))
                                     (equal (,foop ,x)
                                            nil))
-                           :rule-classes ((:rewrite :backchain-limit-lst 1)))
+                           :rule-classes ((:rewrite :backchain-limit-lst 1))
+                           :hints(("Goal"
+                                   :in-theory
+                                   (union-theories
+                                    '(,foop)
+                                    (theory 'defaggregate-basic-theory)))))
 
                          (add-to-ruleset tag-reasoning
                                          '(,(intern-in-package-of-symbol
@@ -945,7 +1204,10 @@ optimization altogether.</p>")
                   (implies (,foop ,x)
                            (consp ,x))
                   :rule-classes :compound-recognizer
-                  :hints(("Goal" :in-theory (enable ,foop))))
+                  :hints(("Goal"
+                          :in-theory
+                          (union-theories '(,foop)
+                                          (theory 'defaggregate-basic-theory)))))
 
                 ,@(da-make-accessors-of-constructor name field-names)
                 ,@(da-make-requirements-of-recognizer name require field-names)))
@@ -961,8 +1223,17 @@ optimization altogether.</p>")
            ,(da-make-honsed-maker-fn name field-names field-defaults)
            ,(da-make-honsed-maker name field-names)
 
-           . ,other-events)))
-    (mv event state)))
+           (with-output :stack :pop
+             (progn . ,other-events))
+
+           (value-triple '(defaggregate ,name)))))
+    (mv `(with-output
+           :stack :push
+           :gag-mode t
+           :off (acl2::summary acl2::observation acl2::prove acl2::proof-tree
+                               acl2::event)
+           ,event)
+        state)))
 
 (defmacro defaggregate (name &rest args)
   `(make-event

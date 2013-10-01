@@ -1,17 +1,32 @@
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
-
-(set-inhibit-warnings "theory")
-
 (include-book "g-if")
 (include-book "g-primitives-help")
 (include-book "symbolic-arithmetic-fns")
 (include-book "eval-g-base")
-;(include-book "tools/with-arith5-help" :dir :system)
 (local (include-book "symbolic-arithmetic"))
 (local (include-book "eval-g-base-help"))
 (local (include-book "hyp-fix-logic"))
-;(local (allow-arith5-help))
+(set-inhibit-warnings "theory")
 
 ;; (defthm true-listp-of-bfr-integer-length-s1
 ;;   (true-listp (mv-nth 1 (bfr-integer-length-s1 offset x)))
@@ -22,7 +37,7 @@
 ;;   (true-listp (bfr-integer-length-s x))
 ;;   :hints(("Goal" :in-theory (enable bfr-integer-length-s)))
 ;;   :rule-classes :type-prescription)
- 
+
 
 (def-g-fn integer-length
   `(let ((x i))
@@ -33,8 +48,8 @@
           (if (zp clk)
               (g-apply 'integer-length (gl-list x))
             (g-if test
-                  (,gfn then hyp clk)
-                  (,gfn else hyp clk))))
+                  (,gfn then . ,params)
+                  (,gfn else . ,params))))
          ((g-apply & &)
           (g-apply 'integer-length (gl-list x)))
          ((g-var &)
@@ -65,13 +80,18 @@
 ;; (def-gobjectp-thm integer-length
 ;;   :hints `(("Goal" :in-theory (e/d ()
 ;;                                  ((:definition ,gfn)))
-;;           :induct (,gfn i hyp clk)
-;;           :expand ((,gfn i hyp clk)))))
+;;           :induct (,gfn i . ,params)
+;;           :expand ((,gfn i . ,params)))))
 
 (verify-g-guards
  integer-length
  :hints `(("Goal" :in-theory (disable ,gfn))))
 
+
+(def-gobj-dependency-thm integer-length
+  :hints `(("goal" :induct ,gcall
+            :expand (,gcall)
+            :in-theory (disable (:d ,gfn)))))
 
 
 (local (defthm non-integerp-integer-length
@@ -102,7 +122,7 @@
                                     general-concretep-def
                                     eval-g-base-alt-def
                                     integer-length))
-            :induct (,gfn i hyp clk)
-            :expand ((,gfn i hyp clk)))
+            :induct (,gfn i . ,params)
+            :expand ((,gfn i . ,params)))
            (and stable-under-simplificationp
                 '(:expand ((:with eval-g-base (eval-g-base i env)))))))

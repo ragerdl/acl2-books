@@ -1,4 +1,4 @@
-; S-Expressions for 4-Valued Logic
+ ; S-Expressions for 4-Valued Logic
 ; Copyright (C) 2010-2012 Centaur Technology
 ;
 ; Contact:
@@ -130,6 +130,7 @@ of fixnums to hold the values, or similar.</p>"
 counterpart.</p>")
 
   (defun 4v-sexpr-apply (fn args)
+    (declare (xargs :guard (true-listp args)))
     (b* (((when (or (eq fn (4vt))
                     (eq fn (4vf))
                     (eq fn (4vx))
@@ -145,6 +146,7 @@ counterpart.</p>")
         (iff       (4v-iff      arg1 arg2))
         (or        (4v-or       arg1 arg2))
         (ite*      (4v-ite*     arg1 arg2 arg3))
+        (zif       (4v-zif      arg1 arg2 arg3))
         (buf       (4v-unfloat  arg1))
         (res       (4v-res      arg1 arg2))
         (tristate  (4v-tristate arg1 arg2))
@@ -154,8 +156,7 @@ counterpart.</p>")
         ;; (wand     (4v-wand  arg1 arg2))
         ;; (wor      (4v-wor   arg1 arg2))
         (otherwise (4vx)))))
-         
-         
+
 
 ; [Jared] I was tempted to make a 4v-sexpr-eval1 function in the style of
 ; 4v-sexpr-eval-alist1, but this seems troublesome because it would mean
@@ -190,6 +191,7 @@ counterpart.</p>")
           (iff       (4v-iff      arg1 arg2))
           (or        (4v-or       arg1 arg2))
           (ite*      (4v-ite*     arg1 arg2 arg3))
+          (zif       (4v-zif      arg1 arg2 arg3))
           (buf       (4v-unfloat  arg1))
           (res       (4v-res      arg1 arg2))
           (tristate  (4v-tristate arg1 arg2))
@@ -534,8 +536,8 @@ temporarily make it fast.</p>"
 <p>We construct a new sexpr by copying @('x'), except that we
 <b>unconditionally</b> replace every variable in @('x') with its binding in
 @('al'), regardless of whether such a binding actually exists.  Any unbound
-variables are just replaced by NIL, which in our @(see 4v-sexpr) format always
-evaluates to X.</p>
+variables are just replaced by NIL, which in our semantics always evaluates to
+X.</p>
 
 <p>We @(see memoize) this function, but this only helps when you are composing
 with the same alist.  We don't use @(':forget t') because you frequently want
@@ -643,7 +645,7 @@ temporarily make it fast.</p>"
 
 (defsection 4v-sexpr-alist-extract
   :parents (4v-sexprs)
-  :short "Extract a portion of a @(see 4v-sexpr) alist."
+  :short "Extract a portion of a <see topic='@(url 4v-sexprs)'>4v-sexpr</see> alist."
   :long "<p>@(call 4v-sexpr-alist-extract) is given:</p>
 
 <ul> <li>@('keys'), a list of names, and</li> <li>@('al'), a fast alist binding

@@ -1,19 +1,33 @@
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
-
 (include-book "general-objects")
-
-(local (include-book "general-object-thms"))
-
-(local (include-book "hyp-fix-logic"))
-
 (include-book "bvec-ite")
 (include-book "hyp-fix")
+(include-book "split-args")
 (include-book "std/misc/two-nats-measure" :dir :system)
-
 (include-book "tools/mv-nth" :dir :system)
 (local (include-book "misc/invariants" :dir :system))
-
+(local (include-book "general-object-thms"))
+(local (include-book "hyp-fix-logic"))
 
 (verify-guards
  general-concrete-obj
@@ -36,6 +50,16 @@
                  (bfr-ite-bss-fn c xin yin)
                  (bfr-ite-bvv-fn c xid yid))))
 
+(defthm gobj-depends-on-of-merge-general-numbers
+  (implies (and (not (pbfr-depends-on k p c))
+                (not (gobj-depends-on k p x))
+                (not (gobj-depends-on k p y))
+                (general-numberp x)
+                (general-numberp y))
+           (not (gobj-depends-on k p (merge-general-numbers c x y))))
+  :hints(("Goal" :in-theory (enable merge-general-numbers
+                                    gobj-depends-on))))
+
 (in-theory (disable merge-general-numbers))
 
 
@@ -50,6 +74,16 @@
          (bv (general-boolean-value b))
          (val (bfr-ite c av bv)))
     (mk-g-boolean val)))
+
+(defthm gobj-depends-on-of-merge-general-booleans
+  (implies (and (not (pbfr-depends-on k p c))
+                (not (gobj-depends-on k p x))
+                (not (gobj-depends-on k p y))
+                (general-booleanp x)
+                (general-booleanp y))
+           (not (gobj-depends-on k p (merge-general-booleans c x y))))
+  :hints(("Goal" :in-theory (enable merge-general-booleans
+                                    gobj-depends-on))))
 
 (in-theory (disable merge-general-booleans))
 
@@ -152,6 +186,18 @@
           (bool-cond-itep-falsebr x))
     (mv t x nil)))
 
+(defthm gobj-depends-on-of-breakdown-ite-by-cond
+  (implies (not (gobj-depends-on k p x))
+           (b* (((mv test x y) (breakdown-ite-by-cond x)))
+             (and (not (pbfr-depends-on k p test))
+                  (not (gobj-depends-on k p x))
+                  (not (gobj-depends-on k p y)))))
+  :hints(("Goal" :in-theory (enable breakdown-ite-by-cond
+                                    bool-cond-itep
+                                    bool-cond-itep-truebr
+                                    bool-cond-itep-falsebr
+                                    bool-cond-itep-cond))))
+
 
 
 
@@ -192,10 +238,10 @@
 (local
  (encapsulate nil
    (local (add-bfr-pat (hyp-fix . ?)))
-   (local (in-theory (disable* acl2-count integer-abs 
+   (local (in-theory (disable* acl2-count integer-abs
                                equal-of-booleans-rewrite not
                                hyp-fix-of-hyp-fixedp
-                               
+
 ;                               bfr-eval-nonnil-forward
                                default-+-2 o<
                                default-<-1
@@ -346,20 +392,22 @@
        (booleans (mv 'merged (merge-general-booleans c x y)))
        (numbers (mv 'merged (merge-general-numbers c x y)))
        (conses (let ((hyp (bfr-and hyp (hf (bfr-ite c xhyp yhyp)))))
-                 (mv 'merged (gl-cons (ite-merge (hf c)
-                                                 (general-consp-car x)
-                                                 (general-consp-car y)
-                                                 hyp)
-                                      (ite-merge (hf c)
-                                                 (general-consp-cdr x)
-                                                 (general-consp-cdr y)
-                                                 hyp)))))
+                 (mv 'merged (gl-cons ;; gl-cons-split-ite ;;
+                              (ite-merge (hf c)
+                                         (general-consp-car x)
+                                         (general-consp-car y)
+                                         hyp)
+                              (ite-merge (hf c)
+                                         (general-consp-cdr x)
+                                         (general-consp-cdr y)
+                                         hyp)))))
        (applies (let ((hyp (bfr-and hyp (hf (bfr-ite c xhyp yhyp)))))
-                  (mv 'merged (g-apply (g-apply->fn x)
-                                       (ite-merge-lists (hf c)
-                                                        (g-apply->args x)
-                                                        (g-apply->args y)
-                                                        hyp)))))
+                  (mv 'merged (g-apply ;; gl-fncall-split-ite ;;
+                               (g-apply->fn x)
+                               (ite-merge-lists (hf c)
+                                                (g-apply->args x)
+                                                (g-apply->args y)
+                                                hyp)))))
        (otherwise (mv ordersym nil)))))
 
 
@@ -441,7 +489,7 @@
             (implies (boolean-listp x)
                      (equal (bfr-eval-list x env)
                             x))))
-   
+
    ;; (local (defthm rewrite-v2i-of-boolean-list
    ;;          (implies (and (syntaxp (not (and (consp x)
    ;;                                           (eq (car x) 'bfr-eval-list))))
@@ -547,7 +595,7 @@
 ;;                            env)))
 ;;    :hints(("Goal" :in-theory (enable hyp-fix hyp-fixedp)))))
 
-            
+
 ;; (local
 ;;  (defthm breakdown-ite-by-cond-nonnil
 ;;    (implies (and hyp (bfr-and c hyp)
@@ -740,10 +788,10 @@
  (encapsulate
    nil
    (local (in-theory (e/d* (generic-geval-g-apply-p)
-                           ((force) member-equal 
+                           ((force) member-equal
                             ite-merge merge-rest maybe-merge
                             general-number-components-ev
-                            
+
                             boolean-list-bfr-eval-list
                             mv-nth
                             default-car default-cdr
@@ -754,7 +802,7 @@
                             hyp-fix-of-hyp-fixedp
                             eval-concrete-gobjectp
                             default-unary-/
-                            
+
                             len
 
                             bfr-eval-list-consts
@@ -804,7 +852,7 @@
                           (generic-geval-list nil env)
                           (:free (a b) (generic-geval-list (cons a b) env)))))
       :flag ite-merge-lists)
-     (defthm maybe-merge-correct 
+     (defthm maybe-merge-correct
        (mv-let (flg ans)
          (maybe-merge c x y xhyp yhyp hyp)
          (implies (and (equal flg 'merged)
@@ -864,14 +912,60 @@
                                      ;; ite-merge-guard merge-rest-guard
                                      ;; maybe-merge-guard
                                      hyp-fix hyp-fixedp)
-                                    ()))))))))
+                                    ()))))))
 
+   (local (Defthm gobj-list-depends-on-nil
+            (not (gobj-list-depends-on k p nil))
+            :hints(("Goal" :in-theory (enable gobj-list-depends-on)))))
+
+   (def-ite-merge-thm gobj-depends-on-of-ite-merge-lemma
+     (defthm gobj-depends-on-of-ite-merge
+       (implies (and (not (pbfr-depends-on k p c))
+                     (not (gobj-depends-on k p x))
+                     (not (gobj-depends-on k p y)))
+                (not (gobj-depends-on k p (ite-merge c x y hyp))))
+       :hints ('(:expand ((ite-merge c x y hyp)
+                          (ite-merge c x y nil)
+                          (ite-merge c x x hyp))))
+       :flag ite-merge)
+     (defthm gobj-depends-on-of-ite-merge-lists
+       (implies (and (not (pbfr-depends-on k p c))
+                     (not (gobj-list-depends-on k p x))
+                     (not (gobj-list-depends-on k p y)))
+                (not (gobj-list-depends-on k p (ite-merge-lists c x y hyp))))
+       :hints ('(:expand ((ite-merge-lists c x y hyp))))
+      :flag ite-merge-lists)
+     (defthm gobj-depends-on-of-maybe-merge
+       (mv-let (flg ans)
+         (maybe-merge c x y xhyp yhyp hyp)
+         (declare (ignore flg))
+         (implies (and (not (pbfr-depends-on k p c))
+                       (not (gobj-depends-on k p x))
+                       (not (gobj-depends-on k p y)))
+                  (not (gobj-depends-on k p ans))))
+       :hints ('(:expand ((maybe-merge c x y xhyp yhyp hyp)
+                          (maybe-merge c x x xhyp yhyp hyp)))
+               (and stable-under-simplificationp
+                    '(:in-theory (enable generic-geval))))
+       :flag maybe-merge)
+
+     (defthm gobj-depends-on-of-merge-rest
+       (implies (and (not (pbfr-depends-on k p firstcond))
+                     (not (gobj-depends-on k p first))
+                     (not (pbfr-depends-on k p c))
+                     (not (gobj-depends-on k p x))
+                     (not (gobj-depends-on k p y)))
+                (not (gobj-depends-on k p (merge-rest firstcond first c x y hyp))))
+       :hints ('(:expand ((merge-rest firstcond first c x y hyp)
+                          (merge-rest firstcond first c x y nil))))
+       :flag merge-rest)
+     :hints (("goal" :do-not-induct t)))))
 
 
 (verify-guards ite-merge
                :hints (("Goal" :in-theory (e/d** ((:ruleset minimal-rules))))
                        (and stable-under-simplificationp
-                            '(:in-theory 
+                            '(:in-theory
                               (e/d** ((:ruleset minimal-rules)
                                       ite-merge-invariants))))
                        (and stable-under-simplificationp
@@ -930,4 +1024,11 @@
                       (generic-geval x env)
                     (generic-geval y env))))
   :hints(("Goal" :in-theory (e/d (gobj-ite-merge)))))
+
+(defthm gobj-depends-on-of-gobj-ite-merge
+  (implies (and (not (pbfr-depends-on k p c))
+                (not (gobj-depends-on k p x))
+                (not (gobj-depends-on k p y)))
+           (not (gobj-depends-on k p (gobj-ite-merge c x y hyp))))
+  :hints(("Goal" :in-theory (enable gobj-ite-merge))))
 

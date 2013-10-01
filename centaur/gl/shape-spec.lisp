@@ -1,13 +1,27 @@
-
-
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
-
 (include-book "shape-spec-defs")
 (include-book "gtypes")
-(include-book "gl-doc-string")
 (include-book "symbolic-arithmetic-fns")
-
 (local (include-book "symbolic-arithmetic"))
 (local (include-book "gtype-thms"))
 (local (include-book "data-structures/no-duplicates" :dir :system))
@@ -44,17 +58,6 @@
    :rule-classes (:rewrite :forward-chaining)))
 
 
-(defund number-spec-indices (nspec)
-  (declare (xargs :guard (number-specp nspec)
-                  :guard-hints (("goal" :in-theory (enable number-specp)))))
-  (append (car nspec)
-          (and (consp (cdr nspec))
-               (append (cadr nspec)
-                       (and (consp (cddr nspec))
-                            (append (caddr nspec)
-                                    (and (consp (cdddr nspec))
-                                         (cadddr nspec))))))))
-
 (local
  (defthm nat-listp-append
    (implies (and (nat-listp a)
@@ -73,35 +76,6 @@
   :hints(("Goal" :in-theory (enable number-specp number-spec-indices))))
 
 
-(mutual-recursion
- (defun shape-spec-indices (x)
-   (declare (xargs :guard (shape-specp x)
-                   :verify-guards nil))
-   (if (atom x)
-       nil
-     (pattern-match x
-       ((g-number nspec)
-        (number-spec-indices nspec))
-       ((g-integer sign bits &)
-        (cons sign bits))
-       ((g-integer? sign bits & intp)
-        (list* intp sign bits))
-       ((g-boolean n) (list n))
-       ((g-var &) nil)
-       ((g-ite if then else)
-        (append (shape-spec-indices if)
-                (shape-spec-indices then)
-                (shape-spec-indices else)))
-       ((g-concrete &) nil)
-       ((g-call & args &) (shape-spec-list-indices args))
-       (& (append (shape-spec-indices (car x))
-                  (shape-spec-indices (cdr x)))))))
- (defun shape-spec-list-indices (x)
-   (declare (xargs :guard (shape-spec-listp x)))
-   (if (atom x)
-       nil
-     (append (shape-spec-indices (car x))
-             (shape-spec-list-indices (cdr x))))))
 
 
 (defthm-shape-spec-flag
@@ -172,75 +146,9 @@
 
 
 
-(defund numlist-to-vars (lst)
-  (declare (xargs :guard (nat-listp lst)
-                  :guard-hints (("goal" :in-theory (enable nat-listp)))))
-  (if (atom lst)
-      nil
-    (cons (bfr-var (car lst))
-          (numlist-to-vars (cdr lst)))))
-
-(defund num-spec-to-num-gobj (nspec)
-  (declare (xargs :guard (number-specp nspec)
-                  :guard-hints (("goal" :in-theory (enable number-specp)))))
-  (cons (numlist-to-vars (car nspec))
-        (and (consp (cdr nspec))
-             (cons (numlist-to-vars (cadr nspec))
-                   (and (consp (cddr nspec))
-                        (cons (numlist-to-vars (caddr nspec))
-                              (and (consp (cdddr nspec))
-                                   (list (numlist-to-vars
-                                          (cadddr nspec))))))))))
-
-(mutual-recursion
- (defun shape-spec-to-gobj (x)
-   (declare (xargs :guard (shape-specp x)
-                   :guard-hints (("goal" :in-theory (enable shape-specp
-                                                            shape-spec-listp)))))
-   (if (atom x)
-       x
-     (pattern-match x
-       ((g-number nspec)
-        (g-number (num-spec-to-num-gobj nspec)))
-       ((g-integer sign bits var)
-        (g-apply 'logapp
-                 (list (len bits)
-                       (g-number (list (bfr-logapp-nus
-                                        (len bits) (numlist-to-vars bits) nil)))
-                       (g-apply 'int-set-sign
-                                (list (g-boolean (bfr-var sign))
-                                      (g-var var))))))
-       ((g-integer? sign bits var intp)
-        (g-apply 'maybe-integer
-                 (list
-                  (g-apply 'logapp
-                           (list (len bits)
-                                 (g-number (list (bfr-logapp-nus
-                                                  (len bits) (numlist-to-vars bits) nil)))
-                                 (g-apply 'int-set-sign
-                                          (list (g-boolean (bfr-var sign))
-                                                (g-var var)))))
-                  (g-var var)
-                  (g-boolean (bfr-var intp)))))
-       ((g-boolean n) (g-boolean (bfr-var n)))
-       ((g-var &) x)
-       ((g-ite if then else)
-        (g-ite (shape-spec-to-gobj if)
-               (shape-spec-to-gobj then)
-               (shape-spec-to-gobj else)))
-       ((g-concrete &) x)
-       ((g-call fn args &) (g-apply fn (shape-spec-list-to-gobjs args)))
-       (& (gl-cons (shape-spec-to-gobj (car x))
-                   (shape-spec-to-gobj (cdr x)))))))
- (defun shape-spec-list-to-gobjs (x)
-   (declare (xargs :guard (shape-spec-listp x)))
-   (if (atom x)
-       nil
-     (cons (shape-spec-to-gobj (car x))
-           (shape-spec-list-to-gobjs (cdr x))))))
 
 (in-theory (disable shape-spec-to-gobj
-                    shape-spec-list-to-gobjs))
+                    shape-spec-to-gobj-list))
 
 
 
@@ -484,18 +392,18 @@
                              bsl1 env)
                             vsl1))))
      :flag ss)
-   (defthm shape-spec-list-to-gobjs-eval-slice-subset-append-1
+   (defthm shape-spec-to-gobj-list-eval-slice-subset-append-1
      (implies (and (shape-spec-listp x)
                    (alistp vsl1)
                    (subsetp-equal (shape-spec-list-indices x)
                                   (strip-cars bsl1)))
               (equal (sspec-geval-list
-                      (shape-spec-list-to-gobjs x)
+                      (shape-spec-to-gobj-list x)
                       (cons (slice-to-bdd-env
                              (append bsl1 bsl2) env)
                             vsl1))
                      (sspec-geval-list
-                      (shape-spec-list-to-gobjs x)
+                      (shape-spec-to-gobj-list x)
                       (cons (slice-to-bdd-env
                              bsl1 env)
                             vsl1))))
@@ -513,7 +421,7 @@
                                    boolean-listp
                                    binary-append))
            :expand ((shape-spec-to-gobj x)
-                    (shape-spec-list-to-gobjs x)
+                    (shape-spec-to-gobj-list x)
                     (shape-spec-indices x)
                     (shape-spec-list-indices x)
                     (shape-spec-vars x)
@@ -549,18 +457,18 @@
                              bsl1 env)
                             vsl1))))
      :flag ss)
-   (defthm shape-spec-list-to-gobjs-eval-slice-subset-append-2
+   (defthm shape-spec-to-gobj-list-eval-slice-subset-append-2
      (implies (and (shape-spec-listp x)
                    (alistp vsl1)
                    (subsetp-equal (shape-spec-list-vars x)
                                   (strip-cars vsl1)))
               (equal (sspec-geval-list
-                      (shape-spec-list-to-gobjs x)
+                      (shape-spec-to-gobj-list x)
                       (cons (slice-to-bdd-env
                              bsl1 env)
                             (append vsl1 vsl2)))
                      (sspec-geval-list
-                      (shape-spec-list-to-gobjs x)
+                      (shape-spec-to-gobj-list x)
                       (cons (slice-to-bdd-env
                              bsl1 env)
                             vsl1))))
@@ -578,7 +486,7 @@
                                    boolean-listp
                                    binary-append))
            :expand ((shape-spec-to-gobj x)
-                    (shape-spec-list-to-gobjs x)
+                    (shape-spec-to-gobj-list x)
                     (shape-spec-indices x)
                     (shape-spec-list-indices x)
                     (shape-spec-vars x)
@@ -623,12 +531,12 @@
                          (shape-spec-list-indices x)
                          (strip-cars bsl1))))
               (equal (sspec-geval-list
-                      (shape-spec-list-to-gobjs x)
+                      (shape-spec-to-gobj-list x)
                       (cons (slice-to-bdd-env
                              (append bsl1 bsl2) env)
                             vsl1))
                      (sspec-geval-list
-                      (shape-spec-list-to-gobjs x)
+                      (shape-spec-to-gobj-list x)
                       (cons (slice-to-bdd-env
                              bsl2 env)
                             vsl1))))
@@ -646,7 +554,7 @@
                                    boolean-listp
                                    binary-append))
            :expand ((shape-spec-to-gobj x)
-                    (shape-spec-list-to-gobjs x)
+                    (shape-spec-to-gobj-list x)
                     (shape-spec-indices x)
                     (shape-spec-list-indices x)
                     (shape-spec-vars x)
@@ -688,12 +596,12 @@
                    (not (intersectp-equal (shape-spec-list-vars x)
                                           (strip-cars vsl1))))
               (equal (sspec-geval-list
-                      (shape-spec-list-to-gobjs x)
+                      (shape-spec-to-gobj-list x)
                       (cons (slice-to-bdd-env
                              bsl1 env)
                             (append vsl1 vsl2)))
                      (sspec-geval-list
-                      (shape-spec-list-to-gobjs x)
+                      (shape-spec-to-gobj-list x)
                       (cons (slice-to-bdd-env
                              bsl1 env)
                             vsl2))))
@@ -711,7 +619,7 @@
                                    boolean-listp
                                    binary-append))
            :expand ((shape-spec-to-gobj x)
-                    (shape-spec-list-to-gobjs x)
+                    (shape-spec-to-gobj-list x)
                     (shape-spec-indices x)
                     (shape-spec-list-indices x)
                     (shape-spec-vars x)
@@ -1270,7 +1178,7 @@
                                       number-specp
                                       number-spec-indices
                                       num-spec-to-num-gobj)))))))
-  
+
 (local
  (defthm-shape-spec-flag
    (defthm alistp-shape-spec-arbitrary-slice-0
@@ -1362,7 +1270,7 @@
         (shape-spec-obj-in-range x obj))
    :hints(("Goal" :in-theory (enable shape-spec-obj-in-range
                                      shape-spec-env-slice)))))
-              
+
 
 
 
@@ -1380,11 +1288,11 @@
 
 
 
-(defun shape-spec-to-gobj-list (x)
-  (if (atom x)
-      nil
-    (cons (shape-spec-to-gobj (car x))
-          (shape-spec-to-gobj-list (cdr x)))))
+;; (defun shape-spec-to-gobj-list (x)
+;;   (if (atom x)
+;;       nil
+;;     (cons (shape-spec-to-gobj (car x))
+;;           (shape-spec-to-gobj-list (cdr x)))))
 
 ;; (defun shape-spec-listp (x)
 ;;   (if (atom x)
@@ -1414,7 +1322,7 @@
 
 
 
-       
+
 
 
 
@@ -1549,7 +1457,7 @@
                    (<= (- (expt 2 (1- (len bits)))) x)
                    (< x (expt 2 (1- (len bits)))))
            (equal x 0)))
-  :hints(("Goal" :in-theory (enable shape-spec-obj-in-range 
+  :hints(("Goal" :in-theory (enable shape-spec-obj-in-range
                                     number-spec-in-range
                                     integer-in-range
                                     g-number->num
@@ -1669,7 +1577,7 @@
 ;; simplification approach.  The backchain ruleset will be tried first to
 ;; reduce the goals to as few as possible clauses with conclusions that are
 ;; calls of shape-spec-obj-in-range on "atomic" shape specs (numbers, booleans,
-;; concretes.)  Then shape-spec-obj-in-range-open will 
+;; concretes.)  Then shape-spec-obj-in-range-open will
 (def-ruleset! shape-spec-obj-in-range-backchain
   '(shape-spec-obj-in-range-open-cons
     shape-spec-obj-in-range-solve-integer?
@@ -1680,7 +1588,7 @@
     shape-spec-obj-in-range-backchain-concrete
     shape-spec-obj-in-range-backchain-atom
     shape-spec-obj-in-range-backchain-list-of-g-booleans
-    shape-spec-obj-in-range-var 
+    shape-spec-obj-in-range-var
     car-cons cdr-cons natp-compound-recognizer
     (shape-spec-obj-in-range) (g-keyword-symbolp) (ash)
     (expt) (unary--) (binary-+) (consp) (integerp) (len)
@@ -1705,111 +1613,270 @@
     (expt) (unary--) (binary-+) (consp) (integerp) (len)
     (car) (cdr) (booleanp) (list-of-g-booleansp) (tag) eql
     len-plus-one len-zero (zp) (boolean-listp) (true-listp)))
-    
 
 
 
-(defdoc shape-specs ":Doc-section ACL2::GL
-Simplified symbolic objects useful for coverage proofs in GL~/
+(defxdoc shape-specs
+  :parents (reference)
+  :short "Simplified symbolic objects useful for coverage proofs in GL."
 
-Shape specifiers are a simplified format of GL symbolic objects,
-capable of representing Booleans, numbers, and conses, as well as
-unconstrained variables and if-then-else objects.  While less
-expressive than full-fledged symbolic objects, shape spec objects make
-it easier to prove coverage lemmas necessary for proving theorems by
-symbolic simulation.  Here, we document common constructions of
-shape-spec objects and what it means to prove coverage.~/
+  :long "<p>Shape specifiers are a simplified format of GL symbolic objects,
+capable of representing Booleans, numbers, conses, free variables, and function
+calls.  While less expressive than full-fledged symbolic objects, shape spec
+objects make it easier to prove coverage lemmas necessary for proving theorems
+by symbolic simulation.  Here, we document common constructions of shape-spec
+objects and what it means to prove coverage.</p>
 
-------------------------------------------------------
+<h3>Creating Shape Spec Objects</h3>
 
-CREATING SHAPE SPEC OBJECTS
-Shape spec objects are a straightforward transformation of symbolic
-objects: wherever a BDD occurs in a symbolic object, a shape specifier
-instead contains a natural number representing a BDD variable.
-Furthermore, ~c[G-APPLY] constructs are prohibited, and the BDD
-variable numbers used in an shape spec may not repeat, nor may the
-variable names used in ~c[G-VAR] constructs.  See
-~il[GL::SYMBOLIC-OBJECTS].  The most common and useful constructions
-of shape spec objects are as follows:
+<p>Shape spec objects are analogues of <see topic=\"@(url
+gl::symbolic-objects)\">symbolic objects</see>, but with several tweaks that make
+it more straightforward to prove that a given concrete object is covered:</p>
+<ul>
+<li>Symbolic objects contain arbitrary Boolean formulas (BDDs or AIGs), whereas
+shape specifiers are restricted to contain only independent Boolean variables.
+Therefore, every bit in a shape specifier is independent from every other
+bit.</li>
+<li>The @(':g-apply') symbolic object construct is replaced by the @(':g-call')
+shape specifier construct.  The @(':g-call') object has an additional field that holds a
+user-provided inverse function, which is useful for proving coverage; see @(see
+g-call).</li>
+</ul>
 
- (:G-BOOLEAN . <num>)
-Represents a Boolean.
+<p>Shape spec objects may be created using the following constructors
+ (roughly in order of usefulness).  Additionally, a non-keyword atom is a shape
+spec representing itself:</p>
 
- (:G-NUMBER  <list-of-nums>)
-Represents a two's-complement integer with bits corresponding to the
-list, least significant bit first.  Rationals and complex rationals
-are also available; ~l[GL::SYMBOLIC-OBJECTS].  A :G-NUMBER construct with
-a list of length ~c[N] represents integers ~c[X] where
- ~c[(<= (- (expt 2 n) x)] and ~c[(< x (expt 2 n))].
+<dl>
 
- (<Car> . <Cdr>)
-Represents a cons; Car and Cdr should be well-formed shape specifiers.
+<dt>@('(G-BOOLEAN <num>)')</dt>
 
- <Atom>
-Represents the atom itself; must not be one of the six distinguished
-keyword symbols :G-CONCRETE, :G-BOOLEAN, :G-NUMBER, :G-ITE, :G-VAR, or
-:G-APPLY.
+<dd>Represents a Boolean.  @('num') (a natural number) may not be repeated in
+any other @(':G-BOOLEAN') or @(':G-NUMBER') construct in the shape-spec.</dd>
 
-------------------------------------------------------
+<dt>@('(G-NUMBER  (list <list-of-nums>))')</dt>
 
-WHAT IS A COVERAGE PROOF?
-In order to prove a theorem by symbolic simulation, one binds each
-variable mentioned in the theorem to a symbolic object and then
-symbolically simulates the conclusion of the theorem on these symbolic
-objects.  If the result is true, what can we conclude?  It depends on
-the coverage of the symbolic inputs.  For example, one might
-symbolically simulate the term ~c[(< (+ A B) 7)] with ~c[A] and ~c[B]
-bound to symbolic objects representing two-bit natural numbers and
-recieve a result of ~c[T].  From this, it would be fallacious to
-conclude ~c[(< (+ 6 8) 7)], because the symbolic simulation didn't
-cover the case where ~c[A] was 6 and ~c[B] 7.  In fact, it isn't
-certain that we can conclude ~c[(< (+ 2 2) 7)] from our symbolic
-simulation, because the symbolic object bindings for ~c[A] and ~c[B]
-might have interedependencies such that ~c[A] and ~c[B] can't
-simultaneously represent 2.  (For example, the bindings could be such
-that bit 0 of ~c[A] and ~c[B] are always opposite.)  In order to prove
-a useful theorem from the result of such a symbolic simulation, we
-must show that some set of concrete input vectors is covered by the
-symbolic objects bound to ~c[A] and ~c[B].  But in general, it is a
-tough computational problem to determine the set of concrete input
-vectors that are covered by a given symbolic input vector.
+<dd>Represents a two's-complement integer with bits corresponding to the list,
+least significant bit first.  Rationals and complex rationals are also
+available; @(see SYMBOLIC-OBJECTS).  A :G-NUMBER construct with a list of
+length @('N') represents integers @('X') where @('(<= (- (expt 2 n)) x)') and
+@('(< x (expt 2 n))').  The @('list-of-nums') must be natural numbers, may not
+repeat, and may not occur in any other @(':G-BOOLEAN') or @(':G-NUMBER')
+construct.</dd>
 
-To make these determinations easier, shape spec objects are somewhat
-restricted.  Whereas symbolic objects generally use BDDs to represent
-individual Booleans or bits of numeric values (~l[GL::SYMBOLIC-OBJECTS]),
-shape specs instead use natural numbers representing UBDD variables.
-Additionally, shape specs are restricted such that no BDD variable
-number may be used more than once among the bindings for the variables
-of a theorem; this is to prevent interdependencies among them.
+<dt>@('(cons <Car> <Cdr>)')</dt>
 
-While in general it is a difficult problem to determine whether a
-symbolic object can evaluate to a given concrete object, a function
-~c[SHAPE-SPEC-OBJ-IN-RANGE] can make that determination about shape
-specs.  ~c[SHAPE-SPEC-OBJ-IN-RANGE] takes two arguments, a shape spec
-and some object, and returns T if that object is in the coverage set
-of the shape spec, and NIL otherwise.  Therefore, if we wish to
-conclude that shape specs bound to ~c[A] and ~c[B] cover all two-bit
-natural numbers, we may prove the following theorem:
-~bv[]
+<dd>Represents a cons; Car and Cdr should be well-formed shape specifiers.</dd>
+
+<dt>@('(G-VAR <name>)')</dt>
+
+<dd>A free variable that may represent any object.  This is primarily useful
+when using GL's term-level capabilities; see @(see term-level-reasoning).</dd>
+
+<dt>@('(G-CALL <fnname> <arglist> <inverse>)')</dt>
+
+<dd>Represents a call of the named function applied to the given arguments.
+The @('inverse') does not affect the symbolic object generated, which is
+@('(:G-APPLY <fnname> . <arglist>)'), but is used in the coverage proof; see
+@(see g-call). This construct is primarily useful when using GL's term-level
+capabilities; see @(see term-level-reasoning).</dd>
+
+<dt>@('(G-ITE <test> <then> <else>)')</dt>
+<dd>Represents an if/then/else, where @('test'), @('then'), and @('else') are
+shape specs.</dd>
+
+</dl>
+
+
+<h3>What is a Coverage Proof?</h3>
+
+<p>In order to prove a theorem by symbolic simulation, one binds each variable
+mentioned in the theorem to a symbolic object and then symbolically simulates
+the conclusion of the theorem on these symbolic objects.  If the result is
+true, what can we conclude?  It depends on the coverage of the symbolic inputs.
+For example, one might symbolically simulate the term @('(< (+ A B) 7)') with
+@('A') and @('B') bound to symbolic objects representing two-bit natural
+numbers and recieve a result of @('T').  From this, it would be fallacious to
+conclude @('(< (+ 6 8) 7)'), because the symbolic simulation didn't cover the
+case where @('A') was 6 and @('B') 7.  In fact, it isn't certain that we can
+conclude @('(< (+ 2 2) 7)') from our symbolic simulation, because the symbolic
+object bindings for @('A') and @('B') might have interedependencies such that
+@('A') and @('B') can't simultaneously represent 2.  (For example, the bindings
+could be such that bit 0 of @('A') and @('B') are always opposite.)  In order
+to prove a useful theorem from the result of such a symbolic simulation, we
+must show that some set of concrete input vectors is covered by the symbolic
+objects bound to @('A') and @('B').  But in general, it is a tough
+computational problem to determine the set of concrete input vectors that are
+covered by a given symbolic input vector.</p>
+
+<p>To make these determinations easier, shape spec objects are somewhat
+restricted.  Whereas symbolic objects generally use BDDs (or AIGs, depending on
+the <see topic=\"@(url modes)\">mode</see>) to represent
+individual Booleans or bits of numeric values (see @(see symbolic-objects)),
+shape specs instead use natural numbers representing Boolean variables.
+Additionally, shape specs are restricted such that no Boolean variable number may
+be used more than once among the bindings for the variables of a theorem; this
+prevents interdependencies among them.</p>
+
+<p>While in general it is a difficult problem to determine whether a symbolic
+object can evaluate to a given concrete object, a function
+@('SHAPE-SPEC-OBJ-IN-RANGE') can make that determination about shape specs.
+@('SHAPE-SPEC-OBJ-IN-RANGE') takes two arguments, a shape spec and some object,
+and returns T if that object is in the coverage set of the shape spec, and NIL
+otherwise.  Therefore, if we wish to conclude that shape specs bound to @('A')
+and @('B') cover all two-bit natural numbers, we may prove the following
+theorem:</p>
+
+@({
  (implies (and (natp a) (< a 4)
                (natp b) (< b 4))
           (shape-spec-obj-in-range (list a-binding b-binding)
                                    (list a b)))
-~ev[]
+})
 
-When proving a theorem using the GL clause processor, variable
-bindings are given as shape specs so that coverage obligations may be
-stated in terms of ~c[SHAPE-SPEC-OBJ-IN-RANGE].  The shape specs are
-converted to symbolic objects and may be parametrized based on some
-restrictions from the hypotheses, restricting their range further.
-Thus, in order to prove a theorem about fixed-length natural numbers,
-for example, one may provide a shape specifier that additionally
-covers negative integers of the given length; parametrization can then
-restrict the symbolic inputs used in the simulation to only cover the
-naturals, while the coverage proof may still be done using the
-simpler, unparametrized shape spec.
-~/
-")
+<p>When proving a theorem using the GL clause processor, variable bindings are
+given as shape specs so that coverage obligations may be stated in terms of
+@('SHAPE-SPEC-OBJ-IN-RANGE').  The shape specs are converted to symbolic
+objects and may be parametrized based on some restrictions from the hypotheses,
+restricting their range further.  Thus, in order to prove a theorem about
+fixed-length natural numbers, for example, one may provide a shape specifier
+that additionally covers negative integers of the given length; parametrization
+can then restrict the symbolic inputs used in the simulation to only cover the
+naturals, while the coverage proof may still be done using the simpler,
+unparametrized shape spec.</p>")
+
+(defxdoc g-call
+  :parents (shape-specs term-level-reasoning)
+  :short "A shape-spec representing a function call."
+  :long
+  "<p>Note: This is an advanced topic.  You should first read @(see
+term-level-reasoning) to see whether this is of interest, then be familiar with
+@(see shape-specs) before reading this.</p>
+
+<p>@('G-CALL') is the constructor for a shape-spec representing a function
+call.  Usage:</p>
+
+@({
+  (g-call <function name>
+          <list of argument shape-specs>
+          <inverse function>)
+ })
+
+<p>This yields a G-APPLY object (see @(see symbolic-objects)):</p>
+@({
+  (g-apply <function name>
+           <list of argument symbolic objects>)
+ })
+
+<p>The inverse function field does not affect the symbolic object that is
+generated from the g-call object, but it determines how we attempt to prove the
+coverage obligation.</p>
+
+<p>The basic coverage obligation for assigning some variable V a shape spec SS
+is that for every possible value of V satisfying the hypotheses, there must be
+an environment under which the symbolic object derived from SS evaluates to
+that value.  The coverage proof must show that there exists such an
+environment.</p>
+
+<p>Providing an inverse function INV basically says:</p>
+
+<p><box>
+   \"If we need (FN ARGS) to evaluate to VAL, then ARGS should be (INV VAL).\"
+</box></p>
+
+<p>So to prove that (G-CALL FN ARGS INV) covers VAL, we first prove that ARGS
+cover (INV VAL), then that (FN (INV VAL)) equals VAL.  The argument that this
+works is:</p>
+
+<ul>
+
+<li>We first prove ARGS covers (INV VAL) -- that is, there exists some
+environment E under which the symbolic objects derived from ARGS evaluate
+to (INV VAL).</li>
+
+<li>Since (FN (INV VAL)) equals VAL, this same environment E suffices to make
+the symbolic object (FN ARGS) evaluate to VAL.</li>
+
+</ul>
+
+<p>We'll now show an example. We build on the memory example discussed in @(see
+term-level-reasoning).  Suppose we want to initially assign a memory object
+@('mem') a symbolic value under which address 1 has been assigned a 10-bit
+integer.  That is, we want to be able to assume only the following about
+@('mem'):</p>
+
+@({
+  (signed-byte-p 10 (access-mem 1 mem))
+ })
+
+<p>Assuming our memory follows the standard record rules, i.e.</p>
+
+@({
+  (update-mem addr (access-mem addr mem) mem) = mem,
+})
+
+<p>we can represent any such memory as</p>
+
+@({
+  (update-mem 1 <some 10-bit integer> <some memory>)
+})
+
+<p>Our shape-spec for this will therefore be:</p>
+
+@({
+ (g-call 'update-mem
+         (list 1
+               (g-number (list 0 1 2 3 4 5 6 7 8 9)) ;; 10-bit integer
+               (g-var 'mem)) ;; free variable
+         <some inverse function>)
+})
+
+<p>What is an appropriate inverse?  The inverse needs to take any memory
+satisfying our assumption and generate the list of necessary arguments to
+update-mem that fit this template.  The following works:</p>
+
+@({
+   (lambda (m) (list 1 (access-mem 1 m) m))
+})
+
+<p>because for any value m satisfying our assumptions,</p>
+
+<ul>
+
+<li>the first argument returned is 1, which is covered by our shape-spec 1</li>
+
+<li>the second argument returned will (by the assumption) be a 10-bit integer,
+which is covered by our g-number shape-spec</li>
+
+<li>the third argument returned matches our g-var shape-spec since anything at
+all is covered by it</li>
+
+<li>the final term we end up with is:
+@({
+        (update-mem 1 (access-mem 1 m) m)
+})
+    which (by the record rule above) equals m.</li>
+
+</ul>
+
+<p>GL tries to manage coverage proofs itself, and when using G-CALL constructs
+some rules besides the ones it typically uses may be necessary -- for example,
+the redundant record update rule used here.  You may add these rules to the
+rulesets used for coverage proofs as follows:</p>
+
+@({
+ (acl2::add-to-ruleset gl::shape-spec-obj-in-range-backchain
+                       redundant-mem-update)
+ (acl2::add-to-ruleset gl::shape-spec-obj-in-range-open
+                       redundant-mem-update)
+})
+
+<p>There are two rulesets because these are used in slightly different phases of
+the coverage proof.</p>
+
+<p>This feature has not yet been widely used and the detailed mechanisms
+for (e.g.)  adding rules to the coverage strategy are likely to change.</p>")
+
 
 
 
@@ -1834,7 +1901,7 @@ simpler, unparametrized shape spec.
 
 (local
  (defsection shape-spec-call-free
-   
+
 
    (local (in-theory (enable shape-spec-call-free)))
 
@@ -1980,7 +2047,7 @@ simpler, unparametrized shape spec.
          (& (if iff-flg
                 obj-term
               `(if (consp ,obj-term)
-                   (if ,(shape-spec-oblig-term (car x) (car-term obj-term) nil) 
+                   (if ,(shape-spec-oblig-term (car x) (car-term obj-term) nil)
                        ,(shape-spec-oblig-term (cdr x) (cdr-term obj-term) nil)
                      'nil)
                  'nil))))))
@@ -1997,7 +2064,7 @@ simpler, unparametrized shape spec.
               'nil)
          ''nil))))
 
-  
+
 
   (mutual-recursion
    (defun shape-spec-env-term (x obj-term iff-flg)
@@ -2033,7 +2100,7 @@ simpler, unparametrized shape spec.
                (nths (make-nth-terms inverse-term 0 (len args))))
             (shape-spec-list-env-term args nths)))
          (& `(ss-append-envs
-              ,(shape-spec-env-term (car x) (car-term obj-term) nil) 
+              ,(shape-spec-env-term (car x) (car-term obj-term) nil)
               ,(shape-spec-env-term (cdr x) (cdr-term obj-term) nil))))))
    (defun shape-spec-list-env-term (x obj-terms)
      (declare (xargs :guard (and (shape-spec-listp x)
@@ -2136,7 +2203,7 @@ simpler, unparametrized shape spec.
                      :in-theory (disable shape-spec-vars-subset-cars-env-slice
                                          shape-spec-vars-subset-cars-iff-env-slice)))))
 
-  
+
   (defthm-shape-spec-term-flag
     (defthm alistp-car-shape-spec-env-term
       (alistp (car (sspec-geval-ev (shape-spec-env-term x obj-term iff-flg)
@@ -2233,7 +2300,7 @@ simpler, unparametrized shape spec.
        (implies (equal (tag x) :g-call)
                 (equal (shape-spec-to-gobj x)
                        (g-apply (g-call->fn x)
-                                (shape-spec-list-to-gobjs (g-call->args x)))))
+                                (shape-spec-to-gobj-list (g-call->args x)))))
        :hints(("Goal" :in-theory (enable shape-spec-to-gobj))))
 
      (defthm shape-spec-indices-of-g-call
@@ -2333,7 +2400,7 @@ simpler, unparametrized shape spec.
                        (shape-spec-listp x)
                        (no-duplicatesp (shape-spec-list-indices x))
                        (no-duplicatesp (shape-spec-list-vars x)))
-                  (equal (sspec-geval-list (shape-spec-list-to-gobjs x)
+                  (equal (sspec-geval-list (shape-spec-to-gobj-list x)
                                            (cons (slice-to-bdd-env (car env) ee)
                                                  (cdr env)))
                          (sspec-geval-ev-lst obj-terms a))))
@@ -2349,7 +2416,7 @@ simpler, unparametrized shape spec.
                                                x obj-term iff-flg))
                              (:free (env) (sspec-geval-list nil env))
                              (:free (a b env) (sspec-geval-list (cons a b) env))
-                             (shape-spec-list-to-gobjs x)
+                             (shape-spec-to-gobj-list x)
                              (shape-spec-listp x)
                              (shape-spec-list-indices x)
                              (shape-spec-list-vars x))
@@ -2375,6 +2442,19 @@ simpler, unparametrized shape spec.
                       (sspec-geval-ev obj-term a))))
     :hints (("goal" :use ((:instance shape-spec-oblig-term-correct-lemma
                            (iff-flg nil))))))
+
+  (defthm shape-spec-list-oblig-term-correct
+    (let ((env (sspec-geval-ev (shape-spec-list-env-term
+                                x obj-terms)
+                               a)))
+      (implies (and (sspec-geval-ev (shape-spec-list-oblig-term x obj-terms) a)
+                    (shape-spec-listp x)
+                    (no-duplicatesp (shape-spec-list-indices x))
+                    (no-duplicatesp (shape-spec-list-vars x)))
+               (equal (sspec-geval-list (shape-spec-to-gobj-list x)
+                                        (cons (slice-to-bdd-env (car env) ee)
+                                              (cdr env)))
+                      (sspec-geval-ev-lst obj-terms a)))))
 
   (defthm shape-spec-oblig-term-correct-iff
     (let ((env (sspec-geval-ev (shape-spec-env-term

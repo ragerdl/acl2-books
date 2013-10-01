@@ -1,18 +1,33 @@
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
-
-(set-inhibit-warnings "theory")
-
 (include-book "g-if")
 (include-book "g-primitives-help")
 (include-book "symbolic-arithmetic-fns")
 (include-book "eval-g-base")
-;(include-book "tools/with-arith5-help" :dir :system)
 (local (include-book "symbolic-arithmetic"))
 (local (include-book "eval-g-base-help"))
 (local (include-book "hyp-fix-logic"))
-;(local (allow-arith5-help))
-
+(local (include-book "arithmetic/top-with-meta" :dir :system))
+(set-inhibit-warnings "theory")
 
 (def-g-fn unary--
   `(if (atom x)
@@ -22,8 +37,8 @@
         (if (zp clk)
             (g-apply 'unary-- (gl-list x))
           (g-if test
-                (,gfn then hyp clk)
-                (,gfn else hyp clk))))
+                (,gfn then . ,params)
+                (,gfn else . ,params))))
        ((g-apply & &)
         (g-apply 'unary-- (gl-list x)))
        ((g-concrete obj)
@@ -42,16 +57,20 @@
 
 ;; (def-gobjectp-thm unary--
 ;;   :hints `(("Goal" :in-theory (e/d () ((:definition ,gfn)))
-;;             :induct (,gfn x hyp clk)
-;;             :expand ((,gfn x hyp clk)
+;;             :induct (,gfn x . ,params)
+;;             :expand ((,gfn x . ,params)
 ;;                      (:free (x) (gobjectp (- x)))))))
 
 (verify-g-guards
  unary--
  :hints `(("Goal" :in-theory (disable ,gfn))))
 
+(def-gobj-dependency-thm unary--
+  :hints `(("goal" :induct ,gcall
+            :expand (,gcall)
+            :in-theory (disable (:d ,gfn)))))
 
-(local (include-book "arithmetic/top-with-meta" :dir :system))
+
 
 
 (local
@@ -96,7 +115,7 @@
                                     ((:definition ,gfn)
                                      general-number-components-ev
                                      general-numberp-eval-to-numberp))
-            :induct (,gfn x hyp clk)
+            :induct (,gfn x . ,params)
             :do-not-induct t
-            :expand ((,gfn x hyp clk)
+            :expand ((,gfn x . ,params)
                      (:with eval-g-base (eval-g-base x env))))))

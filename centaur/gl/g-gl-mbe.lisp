@@ -1,3 +1,22 @@
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
 (include-book "bfr-sat")
@@ -15,7 +34,7 @@
 
 
 (def-g-fn gl-mbe
-  `(b* ((equal? (glr acl2::always-equal spec impl hyp clk))
+  `(b* ((equal? (glr acl2::always-equal spec impl . ,params))
         (tests (gtests equal? hyp))
         (false (bfr-and hyp
                         (bfr-not (gtests-unknown tests))
@@ -23,8 +42,15 @@
         ((mv false-sat false-succ ?false-ctrex)
          (bfr-sat false))
         ((when (and false-sat false-succ))
+         (make-fast-alist false-ctrex)
          ;; (acl2::sneaky-save 'gl-mbe-ctrex false-ctrex)
-         (er hard? 'gl-mbe "GL-MBE assertion failed. Ctrex: ~x0" false-ctrex)
+         (er hard? 'gl-mbe "GL-MBE assertion failed. Ctrex: ~x0 Args: ~x1 ~
+                            ~x2. Other: ~x3~%"
+             false-ctrex
+             ;; BOZO this is all assuming aig/alist-ctrex mode
+             (gobj->term spec (list false-ctrex))
+             (gobj->term impl (list false-ctrex))
+             (gobj->term other-info (list false-ctrex)))
          spec)
         ((when (not false-succ))
          (er hard? 'gl-mbe "GL-MBE assertion failed to prove.")
@@ -57,6 +83,11 @@
                             (env ,env))
                 (instantiate-bfr-sat-hint (cdr clause) env)))
          (& (instantiate-bfr-sat-hint (cdr clause) env)))))))
+
+(def-gobj-dependency-thm gl-mbe
+  :hints `(("goal"
+            :expand (,gcall)
+            :in-theory (disable (:d ,gfn)))))
 
 (def-g-correct-thm gl-mbe eval-g-base
   :hints '(("goal" :do-not-induct t

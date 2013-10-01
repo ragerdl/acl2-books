@@ -1,6 +1,24 @@
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
-
 (include-book "g-if")
 (include-book "g-primitives-help")
 (include-book "symbolic-arithmetic-fns")
@@ -9,6 +27,7 @@
 (local (include-book "symbolic-arithmetic"))
 (local (include-book "eval-g-base-help"))
 (local (include-book "hyp-fix-logic"))
+(local (include-book "clause-processors/just-expand" :dir :system))
 ;(local (allow-arith5-help))
 
 ;; (include-book "univ-gl-eval")
@@ -79,6 +98,16 @@
                                      general-number-components))
             :do-not-induct t))))
 
+(local
+ (defthm dependencies-of-g-binary-+-of-numbers
+   (implies (and (general-numberp x)
+                 (general-numberp y)
+                 (not (gobj-depends-on n p x))
+                 (not (gobj-depends-on n p y)))
+            (not (gobj-depends-on n p (g-binary-+-of-numbers x y))))
+   :hints (("goal" :do-not-induct t))
+   :otf-flg t))
+
 (in-theory (disable g-binary-+-of-numbers))
 
 (def-g-binary-op binary-+
@@ -92,7 +121,7 @@
 
 (verify-g-guards
  binary-+
- :hints `(("goal" :in-theory (disable* ,gfn 
+ :hints `(("goal" :in-theory (disable* ,gfn
                                        (:rules-of-class :type-prescription
                                                         :here)))))
 
@@ -104,6 +133,12 @@
               (implies (not (acl2-numberp y))
                        (equal (+ x y)
                               (+ x 0))))))
+
+(def-gobj-dependency-thm binary-+
+  :hints `(("goal" :in-theory (disable (:d ,gfn)
+                                       gobj-depends-on)
+            :induct ,gcall
+            :expand (,gcall))))
 
 (def-g-correct-thm binary-+ eval-g-base
   :hints
@@ -126,9 +161,9 @@
                               (:rules-of-class :type-prescription :here))
                              ((:type-prescription bfr-eval)
                               (:type-prescription components-to-number-fn)))
-     :induct (,gfn x y hyp clk)
+     :induct ,gcall
      :do-not-induct t
-     :expand ((,gfn x y hyp clk)))
+     :expand (,gcall))
     (and stable-under-simplificationp
          (flag::expand-calls-computed-hint
           clause '(eval-g-base)))))

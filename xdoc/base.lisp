@@ -23,6 +23,7 @@
 ; instead.
 
 (in-package "XDOC")
+(set-state-ok t)
 
 #!ACL2
 (defmacro lnfix (x)
@@ -37,14 +38,30 @@
   `(mbe :logic (ifix ,x) :exec ,x))
 
 
-(make-event
- `(defconst *xdoc-dir* ,(cbd)))
-
 (table xdoc 'doc nil)
+(table xdoc 'default-parents nil)
+(table xdoc 'post-defxdoc-event nil)
 
 (defun get-xdoc-table (world)
   (declare (xargs :mode :program))
   (cdr (assoc-eq 'doc (table-alist 'xdoc world))))
+
+(defmacro set-default-parents (&rest parents)
+  `(table xdoc 'default-parents
+          (let ((parents ',parents))
+            (cond ((symbol-listp parents)
+                   parents)
+                  ((and (consp parents)
+                        (atom (cdr parents))
+                        (symbol-listp (car parents)))
+                   (car parents))
+                  (t
+                   (er hard? 'set-default-parents
+                       "Expected a symbol-listp, but found ~x0" parents))))))
+
+(defun get-default-parents (world)
+  (declare (xargs :mode :program))
+  (cdr (assoc-eq 'default-parents (table-alist 'xdoc world))))
 
 (defun guard-for-defxdoc (name parents short long)
   (declare (xargs :guard t))
@@ -59,17 +76,47 @@
            (stringp long)
            (cw ":long is not a string (or nil)~%"))))
 
+(defun normalize-bookname (bookname state)
+  (let* ((dir-system (acl2::f-get-global 'acl2::system-books-dir state))
+         (lds        (length dir-system)))
+    ;; Eventually we could do something fancier to support
+    ;; add-include-book-dirs, but this is probably fine for the Community
+    ;; Books, at least.
+    (if (and (stringp dir-system)
+             (stringp bookname)
+             (<= lds (length bookname))
+             (equal dir-system (subseq bookname 0 lds)))
+        (concatenate 'string "[books]/"
+                     (subseq bookname lds nil))
+      nil)))
+
 (defmacro defxdoc (name &key parents short long)
   (declare (xargs :guard (guard-for-defxdoc name parents short long)))
-  `(make-event
-    (let* ((pkg   (acl2::f-get-global 'current-package state))
-           (entry (list (cons :name ',name)
-                        (cons :base-pkg (acl2::pkg-witness pkg))
-                        (cons :parents ',parents)
-                        (cons :short ',short)
-                        (cons :long ',long))))
-     `(table xdoc 'doc
-             (cons ',entry (get-xdoc-table world))))))
+  `(with-output :off (event summary)
+    (make-event
+     (let* ((world (w state))
+            (pkg   (acl2::f-get-global 'acl2::current-package state))
+            (info  (acl2::f-get-global 'acl2::certify-book-info state))
+            (bookname (if info
+                          (acl2::access acl2::certify-book-info info :full-book-name)
+                        "Current Interactive Session"))
+            (bookname (normalize-bookname bookname state))
+            (parents (or ',parents (get-default-parents (w state))))
+            (entry (list (cons :name ',name)
+                         (cons :base-pkg (acl2::pkg-witness pkg))
+                         (cons :parents parents)
+                         (cons :short ',short)
+                         (cons :long ',long)
+                         (cons :from bookname)))
+            (table-event
+             `(table xdoc 'doc
+                     (cons ',entry (get-xdoc-table world))))
+            (post-event
+             (cdr (assoc-eq 'post-defxdoc-event (table-alist 'xdoc world)))))
+       `(progn
+          ,table-event
+          ,@(and post-event (list post-event))
+          (value-triple '(defxdoc ,',name)))))))
 
 (defun defxdoc-raw-fn (name parents short long)
   (declare (xargs :guard t)

@@ -448,7 +448,8 @@ of which recognizers require true-listp and which don't.</p>")
     acl2::set-equiv-implies-equal-subsetp-2
     acl2::subsetp-refl
     acl2::list-fix-under-list-equiv
-    sets::mergesort-under-set-equiv))
+    sets::mergesort-under-set-equiv
+    acl2::binary-append-without-guard))
 
 
 
@@ -572,7 +573,6 @@ list.</p>"
           ;; We start with the basic requirements about elementp.  Note that these
           ;; theorems are done in the user's current theory.  It's up to the user
           ;; to be able to prove these.
-
           (local (defthm deflist-local-booleanp-element-thm
                    (or (equal ,element t)
                        (equal ,element nil))
@@ -704,7 +704,20 @@ list.</p>"
             :hints(("Goal"
                     :induct (len ,x)
                     :in-theory (enable subsetp-equal ,name)
-                    :expand (true-listp ,x))))
+                    :expand (true-listp ,x)
+                    :do-not '(eliminate-destructors))
+
+                   ;; Horrible, horrible hack.  I found that I couldn't get
+                   ;; deflist to process ATOM-LISTP because ACL2 knows too much
+                   ;; about ATOM, so the member-equal rule above ends up being
+                   ;; no good because it tries to target ATOM instead of CONSP,
+                   ;; and we get nowhere.  Solution: try to explicitly use the
+                   ;; member rule if we get stuck.
+                   (and stable-under-simplificationp
+                        '(:use ((:instance
+                                 ,(mksym elementp '-when-member-equal-of- name)
+                                 (,a (car ,x))
+                                 (,x ,y)))))))
 
           ,@(and (not true-listp)
                  ;; Awesome set congruence rule for loose recognizers, but not
@@ -906,6 +919,16 @@ list.</p>"
                             t))
             :hints(("Goal" :do-not-induct t)))
 
+          (defthm ,(mksym name '-of-rcons)
+            (equal (,name ,@(subst `(rcons ,a ,x) x formals))
+                   (and ,(if negatedp
+                             `(not (,elementp ,@(subst a x elem-formals)))
+                           `(,elementp ,@(subst a x elem-formals)))
+                        (,name ,@(if true-listp
+                                     (subst `(list-fix ,x) x formals)
+                                   formals))))
+            :hints(("Goal" :in-theory (enable rcons))))
+
           (defthm ,(mksym name '-of-duplicated-members)
             (implies (,name ,@(subst `(double-rewrite ,x) x formals))
                      (equal (,name ,@(subst `(duplicated-members ,x) x formals))
@@ -1017,14 +1040,15 @@ list.</p>"
        ,@(and parents `(:parents ,parents))
        ,@(and short   `(:short ,short))
        ,@(and long    `(:long ,long))
-       . ,(if (not rest)
-              events
-            `(;; keep all our deflist theory stuff bottled up
-              (encapsulate () . ,events)
-              ;; now do the rest of the events with name enabled, so they get
-              ;; included in the section
-              (local (in-theory (enable ,name)))
-              . ,rest)))))
+       ;; keep all our deflist theory stuff bottled up.  BOZO encapsulate is
+       ;; slow, better to use a progn here
+       (encapsulate ()
+         . ,events)
+       ;; now do the rest of the events with name enabled, so they get included
+       ;; in the section
+       . ,(and rest
+               `((local (in-theory (enable ,name)))
+                 . ,rest)))))
 
 
 (defmacro deflist (name formals element

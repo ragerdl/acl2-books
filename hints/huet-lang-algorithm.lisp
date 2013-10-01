@@ -1,10 +1,11 @@
+; Copyright (C) 2013, ForrestHunt, Inc.
+; Written by J Strother Moore, December, 2003 (revised July, 2007)
+; License: A 3-clause BSD license.  See the LICENSE file distributed with ACL2.
+
 ; I have marked with (i-am-here) various questions worthy of
 ; additional work.
 
 ; Second-Order Matching Under a Set of Rewriting Rules
-
-; J Strother Moore
-; December, 2003 (revised July, 2007)
 
 ; I implement the second-order matching algorithm of Huet and Lang and
 ; then couple it with a search strategy that generates and tests ``all
@@ -45,8 +46,11 @@
 
 ; We start by developing the Huet-Lang algorithm.
 
-; For a description of the basic algorithm, see huet-lang-algorithm.ps,
-; which is my rendition of G. Huet and B. Lang, ``Proving and applying
+; For a description of the basic algorithm, see "Automatically
+; Computing Functional Instantiations," in Proceedings of the ACL2
+; Workshop 2009(eds. D. Russinoff and S. Ray), Boston, 2009, URL
+; http://www.cs.utexas.edu/users/moore/publications/moore-09a.pdf .
+; That is my rendition of G. Huet and B. Lang, ``Proving and applying
 ; program transformations expressed with second-order patterns,'' Acta
 ; Informatica, 11, pp 31--55, 1997.
 

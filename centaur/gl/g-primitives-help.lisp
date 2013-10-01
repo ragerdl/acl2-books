@@ -1,10 +1,28 @@
-
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
-
 (include-book "tools/flag" :dir :system)
 (include-book "gl-util")
-
+(include-book "bvar-db")
+(include-book "glcp-config")
 (program)
 
 
@@ -27,19 +45,22 @@
 ;;                                 :exec ,(car formals)))
 ;;           (mbe-gobj-fix-formals-list (cdr formals)))))
 
-(defmacro def-g-fn (fn body)
+(defmacro def-g-fn (fn body &key measure)
   `(make-event
-    (let* ((gfn (gl-fnsym ',fn))
-           (world (w state))
-           (formals (wgetprop ',fn 'formals)))
+    (b* ((gfn (gl-fnsym ',fn))
+         (world (w state))
+         (formals (wgetprop ',fn 'formals))
+         (params '(hyp clk config bvar-db state))
+         (measure (or ',measure `(+ . ,(acl2-count-formals-list
+                                        formals)))))
       `(progn
-         (defun ,gfn (,@formals hyp clk)
-           (declare (xargs :guard (natp clk)
-                           :measure
-                           (+ . ,(acl2-count-formals-list
-                                  formals))
-                           :verify-guards nil)
-                    (ignorable ,@formals hyp clk))
+         (defun ,gfn (,@formals hyp clk config bvar-db state)
+           (declare (xargs :guard (and (natp clk)
+                                       (glcp-config-p config))
+                           :measure ,measure
+                           :verify-guards nil
+                           :stobjs (bvar-db state))
+                    (ignorable ,@formals . ,params))
              ,,body)
          (table g-functions ',',fn ',gfn)))))
 
@@ -56,30 +77,30 @@
                    (mk-g-concrete
                     (ec-call (,fn (general-concrete-obj ,a)
                                   (general-concrete-obj ,b)))))
-                  ((or (atom ,a)
-                       (not (member-eq (tag ,a) '(:g-ite :g-var :g-apply))))
-                   (cond ((or (atom ,b)
-                              (not (member-eq (tag ,b) '(:g-ite :g-var :g-apply))))
-                          ,',',body)
-                         ((eq (tag ,b) :g-ite)
-                          (if (zp clk)
-                              (g-apply ',fn (gl-list ,a ,b))
-                            (let* ((test (g-ite->test ,b))
-                                   (then (g-ite->then ,b))
-                                   (else (g-ite->else ,b)))
-                              (g-if test
-                                    (,gfn ,a then hyp clk)
-                                    (,gfn ,a else hyp clk)))))
-                         (t (g-apply ',fn (gl-list ,a ,b)))))
-                  ((eq (tag ,a) :g-ite)
+                  ((and (consp ,a) (eq (tag ,a) :g-ite))
                    (if (zp clk)
                        (g-apply ',fn (gl-list ,a ,b))
                      (let* ((test (g-ite->test ,a))
                             (then (g-ite->then ,a))
                             (else (g-ite->else ,a)))
                        (g-if test
-                             (,gfn then ,b hyp clk)
-                             (,gfn else ,b hyp clk)))))
+                             (,gfn then ,b hyp clk config bvar-db state)
+                             (,gfn else ,b hyp clk config bvar-db state)))))
+                  ((and (consp ,b) (eq (tag ,b) :g-ite))
+                   (if (zp clk)
+                       (g-apply ',fn (gl-list ,a ,b))
+                     (let* ((test (g-ite->test ,b))
+                            (then (g-ite->then ,b))
+                            (else (g-ite->else ,b)))
+                       (g-if test
+                             (,gfn ,a then hyp clk config bvar-db state)
+                             (,gfn ,a else hyp clk config bvar-db state)))))
+                  ((or (atom ,a)
+                       (not (member-eq (tag ,a) '(:g-var :g-apply))))
+                   (cond ((or (atom ,b)
+                              (not (member-eq (tag ,b) '( :g-var :g-apply))))
+                          ,',',body)
+                         (t (g-apply ',fn (gl-list ,a ,b)))))
                   (t (g-apply ',fn (gl-list ,a ,b)))))))))
 
 ;; (defun gobjectp-thmname (fn)
@@ -103,7 +124,7 @@
 ;;        (thmname (gobjectp-thmname gfn)))
 ;;     `(progn
 ;;        (defthm ,thmname
-;;          (gobjectp (,gfn ,@formals hyp clk))
+;;          (gobjectp (,gfn ,@formals hyp clk config bvar-db state))
 ;;          :hints ,hints)
 ;;        (add-to-ruleset! g-gobjectp-lemmas '(,thmname)))))
 
@@ -152,28 +173,72 @@
     `(encapsulate nil
        (defthm ,thmname
          (implies (bfr-eval hyp (car env))
-                  (equal (,ev (,gfn ,@formals hyp clk) env)
+                  (equal (,ev (,gfn ,@formals hyp clk config bvar-db state) env)
                          (,fn . ,(ev-formals-list ev formals))))
          :hints ,hints)
        (in-theory (disable ,gfn))
        ;; (defthm ,thmname2
        ;;   (implies (bfr-eval hyp (car env))
-       ;;            (equal (,ev-appalist (,gfn ,@formals hyp clk) env appalist)
+       ;;            (equal (,ev-appalist (,gfn ,@formals hyp clk config bvar-db state) env appalist)
        ;;                   (,fn . ,(ev-formals-appalist-list ev-appalist formals
        ;;                                                     'appalist))))
        ;;   :hints ((geval-appalist-functional-inst-hint
        ;;            ',thmname ',ev)))
-                              
+
        (table sym-counterparts-table ',fn '(,gfn ,thmname))
        (table gl-function-info ',fn '(,gfn (,thmname . ,ev))))))
 
-(defmacro def-g-correct-thm (fn ev &key hints)
+(defun def-g-correct-thm-macro (fn ev hints)
   `(make-event
-    (let ((gfn (gl-fnsym ',fn)))
+    (b* ((fn ',fn)
+         (gfn (gl-fnsym fn))
+         (world (w state))
+         (formals (wgetprop fn 'formals))
+         (params '(hyp clk config bvar-db state))
+         (?gcall (cons gfn
+                      (append formals params)))
+         (?fcall (cons fn formals)))
       (def-g-correct-thm-fn gfn ',fn ',ev ,hints (w state)))))
+
+(defmacro def-g-correct-thm (fn ev &key hints)
+  (def-g-correct-thm-macro fn ev hints))
 
 
 (defmacro verify-g-guards (fn &key hints)
   `(make-event
     (let ((gfn (gl-fnsym ',fn)))
       `(verify-guards ,gfn :hints ,,hints))))
+
+
+(defun not-gobj-depends-on-hyps (formals)
+  (if (atom formals)
+      nil
+    (cons `(not (gobj-depends-on badvar parambfr ,(car formals)))
+          (not-gobj-depends-on-hyps (cdr formals)))))
+
+(defun dependency-thmname (fn)
+  (incat 'gl-thm::foo (symbol-name fn) "-DEPENDENCIES"))
+
+(defun def-gobj-dependency-thm-fn (gcall fn hints world)
+  (b* ((formals (wgetprop fn 'formals))
+       (thmname (dependency-thmname fn)))
+    `(encapsulate nil
+       (defthm ,thmname
+         (implies (and . ,(not-gobj-depends-on-hyps formals))
+                  (not (gobj-depends-on badvar parambfr ,gcall)))
+         :hints ,hints)
+       (table sym-counterpart-dep-thms ',fn ',thmname))))
+
+(defun def-gobj-dependency-thm-macro (fn hints)
+  `(make-event
+    (b* ((fn ',fn)
+         (gfn (gl-fnsym fn))
+         (world (w state))
+         (formals (wgetprop fn 'formals))
+         (params '(hyp clk config bvar-db state))
+         (gcall (cons gfn
+                      (append formals params))))
+      (def-gobj-dependency-thm-fn gcall ',fn ,hints (w state)))))
+
+(defmacro def-gobj-dependency-thm (fn &key hints)
+  (def-gobj-dependency-thm-macro fn hints))

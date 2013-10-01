@@ -1,15 +1,31 @@
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
-
 (include-book "g-if")
 (include-book "g-primitives-help")
 (include-book "symbolic-arithmetic-fns")
 (include-book "eval-g-base")
-;(include-book "tools/with-arith5-help" :dir :system)
 (local (include-book "symbolic-arithmetic"))
 (local (include-book "eval-g-base-help"))
 (local (include-book "hyp-fix-logic"))
-;(local (allow-arith5-help))
 
 (local (in-theory (disable acl2::revappend-removal)))
 
@@ -47,6 +63,10 @@
     (revappend-concrete (cdr a)
                         (gl-cons (mk-g-concrete (car a)) b))))
 
+(defthm no-deps-of-revappend-concrete
+  (implies (not (gobj-depends-on k p b))
+           (not (gobj-depends-on k p (revappend-concrete a b)))))
+
 (local
  (progn
    ;; (defthm gobjectp-revappend-concrete
@@ -70,7 +90,7 @@
 ;;   (cond ((or (atom x) (not (eq (tag x) :g-ite))) 0)
 ;;         (t (+ 1 (max (g-ite-depth (g-ite->then x))
 ;;                      (g-ite-depth (g-ite->else x)))))))
-    
+
 ;; (defthm g-ite-depth-of-g-ite->then
 ;;   (implies (eq (tag x) :g-ite)
 ;;            (< (g-ite-depth (g-ite->then x)) (g-ite-depth x)))
@@ -142,6 +162,13 @@
                                                'string)))
              (&
               (coerce-string (cdr x) (cons (code-char 0) pre) hyp))))))))
+
+(defthm deps-of-coerce-string
+  (implies (not (gobj-depends-on k p x))
+           (not (gobj-depends-on k p (coerce-string x pre hyp))))
+  :hints (("goal" :induct (coerce-string x pre hyp)
+           :expand ((coerce-string x pre hyp))
+           :in-theory (disable (:d coerce-string)))))
 
 
 (local
@@ -353,6 +380,13 @@
       ((g-var &) (g-apply 'coerce (gl-list x 'list)))
       (& nil))))
 
+(defthm deps-of-coerce-list
+  (implies (not (gobj-depends-on k p x))
+           (not (gobj-depends-on k p (coerce-list x hyp))))
+  :hints (("goal" :induct  (coerce-list x hyp)
+           :expand ((coerce-list x hyp))
+           :in-theory (disable (:d coerce-list)))))
+
 
 ;; (local
 ;;  (defthm gobjectp-coerce-list
@@ -372,7 +406,7 @@
 (encapsulate nil
   (local (in-theory (disable member-equal)))
 
-  (local (defthm-gobj->term-flag
+  (local (defthm-gobj-flag
            (defthm stringp-eval-g-base
              (implies (and (not (general-concretep x))
                            (not (g-ite-p x))
@@ -412,8 +446,8 @@
         (if (zp clk)
             (g-apply 'coerce (gl-list x y))
           (g-if ytest
-                (,gfn x ythen hyp clk)
-                (,gfn x yelse hyp clk))))
+                (,gfn x ythen hyp clk config bvar-db state)
+                (,gfn x yelse hyp clk config bvar-db state))))
        ((g-apply & &)
         (g-apply 'coerce (gl-list x y)))
        ((g-var &)
@@ -432,8 +466,13 @@
  coerce
  :hints `(("Goal" :in-theory (disable ,gfn))))
 
+(def-gobj-dependency-thm coerce
+  :hints `(("goal" :induct ,gcall
+            :expand (,gcall)
+            :in-theory (disable (:d ,gfn)))))
+
 (local
- (defthm-gobj->term-flag
+ (defthm-gobj-flag
    (defthm eval-g-base-not-equal-list
      (implies (and (not (general-concretep y))
                    (not (g-ite-p y))
@@ -470,8 +509,8 @@
                                      ; eval-g-base-g-apply-p
                                      eval-g-base-alt-def
                                      eval-g-base-not-equal-list))
-            :induct (,gfn x y hyp clk)
-            :expand ((,gfn x y hyp clk)))
+            :induct ,gcall
+            :expand (,gcall))
            (and stable-under-simplificationp
                 '(:in-theory (enable general-concrete-obj-correct
                                      eval-g-base-not-equal-list)))))

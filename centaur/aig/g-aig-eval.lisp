@@ -104,6 +104,17 @@
                                                   x hyp)))
                  (hons-assoc-equal key x)))))
 
+(defthm deps-of-gobj-alist-to-bfr-alist
+  (implies (and (not (gl::gobj-depends-on k p x))
+                (atom-key-gobj-val-alistp x))
+           (and (not (gl::pbfr-list-depends-on
+                      k p (alist-vals (mv-nth 0 (gobj-alist-to-bfr-alist x hyp)))))
+                (not (gl::pbfr-depends-on
+                      k p (mv-nth 1 (gobj-alist-to-bfr-alist x hyp))))))
+  :hints(("Goal" :induct (gobj-alist-to-bfr-alist x hyp)
+          :in-theory (enable gl::pbfr-list-depends-on)
+          :expand ((gl::gobj-depends-on k p x)))))
+
 
 
 
@@ -257,7 +268,7 @@
  
    (local (in-theory (disable atom-key-gobj-val-alistp
                               suffixp ; car-member-when-suffix
-                              faig-bddify-pat)))))
+                              )))))
 
 
 
@@ -269,6 +280,10 @@
       nil
     (cons (gl::g-boolean (car x))
           (g-boolean-list (cdr x)))))
+
+(defthm deps-of-g-boolean-list
+  (implies (not (gl::pbfr-list-depends-on k p x))
+           (not (gl::gobj-depends-on k p (g-boolean-list x)))))
 
 
 (local
@@ -322,11 +337,82 @@
    :bdd (aig-q-compose x al)
    :aig (aig-compose x al)))
 
+(local (defthm bfr-aig-q-compose
+         (implies (not (gl::bfr-mode))
+                  (equal (aig-q-compose x fal)
+                         (AIG-CASES
+                          X
+                          :TRUE T
+                          :FALSE NIL
+                          :VAR (AIG-ENV-LOOKUP X FAL)
+                          :INV (gl::bfr-not (AIG-Q-COMPOSE (CAR X) FAL))
+                          :AND (LET ((A (AIG-Q-COMPOSE (CAR X) FAL)))
+                                    (AND A
+                                         (gl::bfr-binary-and A (AIG-Q-COMPOSE (CDR X)
+                                                                              FAL)))))))
+         :hints(("Goal" :in-theory (enable gl::bfr-not gl::bfr-binary-and)))
+         :rule-classes ((:definition :controller-alist ((aig-q-compose t
+                                                                       nil))))))
+
+(defthm deps-of-hons-assoc-equal
+  (implies (not (gl::pbfr-list-depends-on k p (alist-vals al)))
+           (not (gl::pbfr-depends-on k p (cdr (hons-assoc-equal x al)))))
+  :hints(("Goal" :in-theory (enable hons-assoc-equal
+                                    gl::pbfr-list-depends-on))))
+
+(defthm deps-of-aig-env-lookup
+  (implies (not (gl::pbfr-list-depends-on k p (alist-vals al)))
+           (not (gl::pbfr-depends-on k p (aig-env-lookup x al))))
+  :hints(("Goal" :in-theory (enable aig-env-lookup))))
+
+(defthm deps-of-aig-q-compose
+  (implies (and (not (gl::pbfr-list-depends-on k p (alist-vals al)))
+                (not (gl::bfr-mode)))
+           (not (gl::pbfr-depends-on k p (aig-q-compose x al))))
+  :hints (("goal" :induct (aig-q-compose x al))))
+
+(local (defthm bfr-aig-compose
+         (implies (gl::bfr-mode)
+                  (equal (aig-compose x fal)
+                         (AIG-CASES
+                          X
+                          :TRUE T
+                          :FALSE NIL
+                          :VAR (AIG-ENV-LOOKUP X FAL)
+                          :INV (gl::bfr-not (AIG-COMPOSE (CAR X) FAL))
+                          :AND (LET ((A (AIG-COMPOSE (CAR X) FAL)))
+                                    (AND A
+                                         (gl::bfr-binary-and A (AIG-COMPOSE (CDR X)
+                                                                            FAL)))))))
+         :hints(("Goal" :in-theory (enable gl::bfr-not gl::bfr-binary-and aig-compose)))
+         :rule-classes ((:definition :controller-alist ((aig-compose t
+                                                                     nil))))))
+
+(defthm deps-of-aig-compose
+  (implies (and (not (gl::pbfr-list-depends-on k p (alist-vals al)))
+                (gl::bfr-mode))
+           (not (gl::pbfr-depends-on k p (aig-compose x al))))
+  :hints (("goal" :induct (aig-compose x al)
+           :in-theory (enable (:i aig-compose)))))
+
+(defthm deps-of-aig-bfr-compose
+  (implies (not (gl::pbfr-list-depends-on k p (alist-vals al)))
+           (not (gl::pbfr-depends-on k p (aig-bfr-compose x al)))))
+
+
+
 (defun aig-bfr-compose-list (x al)
   (if (atom x)
       nil
     (cons (aig-bfr-compose (car x) al)
           (aig-bfr-compose-list (cdr x) al))))
+
+
+(defthm deps-of-aig-bfr-compose-list
+  (implies (not (gl::pbfr-list-depends-on k p (alist-vals al)))
+           (not (gl::pbfr-list-depends-on k p (aig-bfr-compose-list x al))))
+  :hints(("Goal" :in-theory (e/d (gl::pbfr-list-depends-on)
+                                 (aig-bfr-compose)))))
 
 
 
@@ -367,6 +453,71 @@
                                     aig-bddify-list-ok)
           :induct (len aigs))))
 
+
+
+
+(local
+ #!GL
+ (progn
+   (defun pbfr-list-depends-on-witness (k p x)
+     (if (atom x)
+         nil
+       (if (pbfr-semantic-depends-on k p (car x))
+           (mv-let (env v)
+             (pbfr-semantic-depends-on-witness k p (car x))
+             (list env v))
+         (pbfr-list-depends-on-witness k p (cdr x)))))
+
+   (defthm pbfr-list-depends-on-witness-iff
+     (implies (not (bfr-mode))
+              (iff (pbfr-list-depends-on-witness k p x)
+                   (pbfr-list-depends-on k p x)))
+     :hints(("Goal" :in-theory (enable pbfr-list-depends-on
+                                       pbfr-depends-on))))
+
+   (defthm pbfr-list-depends-on-by-witness
+     (implies (and (acl2::rewriting-negative-literal
+                    `(pbfr-list-depends-on ,k ,p ,x))
+                   (not (bfr-mode)))
+              (equal (pbfr-list-depends-on k p x)
+                     (mv-let (env v) (pbfr-list-depends-on-witness k p x)
+                       (and (bfr-eval p env)
+                            (bfr-eval p (bfr-set-var k v env))
+                            (not (equal (bfr-eval-list x (bfr-param-env p (bfr-set-var k v env)))
+                                        (bfr-eval-list x (bfr-param-env p env))))))))
+     :hints(("Goal" :in-theory (enable pbfr-list-depends-on
+                                       pbfr-depends-on
+                                       bfr-eval-list))
+            (and stable-under-simplificationp
+                 '(:expand ((pbfr-semantic-depends-on k p (car x)))))))))
+
+(defthm bfr-eval-alist-when-set-non-dep
+  (implies (and (not (gl::pbfr-list-depends-on k p (alist-vals bfr-al)))
+                (gl::bfr-eval p env)
+                (gl::bfr-eval p (gl::bfr-set-var k v env)))
+           (equal (gl::bfr-eval-alist
+                   bfr-al (gl::bfr-param-env p (gl::bfr-set-var k v env)))
+                  (gl::bfr-eval-alist
+                   bfr-al (gl::bfr-param-env p env))))
+  :hints(("Goal" :in-theory (enable gl::pbfr-list-depends-on alist-vals))))
+
+
+
+(defthm deps-of-aig-bfrify-list
+  (mv-let (res exact)
+    (aig-bfrify-list tries aigs bfr-al maybe-wash-args)
+    (implies (and exact
+                  (not (gl::pbfr-list-depends-on k p (alist-vals bfr-al))))
+             (not (gl::pbfr-list-depends-on k p res))))
+  :hints(("Goal" :in-theory (disable aig-bfrify-list)
+          :cases ((gl::bfr-mode)))
+         (cond ((member-equal '(not (gl::bfr-mode)) clause)
+                '(:in-theory (enable aig-bfrify-list
+                                     gl::pbfr-list-depends-on
+                                     gl::pbfr-depends-on
+                                     gl::bfr-depends-on
+                                     gl::bfr-from-param-space)))))
+  :otf-flg t)
  
 
 
@@ -420,6 +571,13 @@
               (gl::g-apply 'aig-eval-list (gl::gl-list x al))))))
 
 
+(defthm deps-of-aig-eval-list-symbolic
+  (implies (and (not (gl::gobj-depends-on k p x))
+                (not (gl::gobj-depends-on k p al)))
+           (not (gl::gobj-depends-on k p (aig-eval-list-symbolic
+                                          x al tries maybe-wash-args hyp clk)))))
+
+
 
 
 
@@ -437,8 +595,10 @@
 
 (make-event
  `(defun ,(gl-fnsym 'aig-eval-list-with-bddify)
-    (x al tries maybe-wash-args hyp clk)
-    (declare (xargs :guard t))
+    (x al tries maybe-wash-args hyp clk config gl::bvar-db state)
+    (declare (xargs :guard t
+                    :stobjs (gl::bvar-db state))
+             (ignore config gl::bvar-db state))
     (aig-eval-list-symbolic x al tries maybe-wash-args hyp clk)))
 
 
@@ -524,6 +684,13 @@
                                               aig-bddify-list))
             :do-not-induct t))))
 
+(local (in-theory (disable aig-eval-list-symbolic)))
+
+(gl::def-gobj-dependency-thm 
+ aig-eval-list-with-bddify
+ :hints`(("Goal" :in-theory (e/d (,gl::gfn)
+                                 (gl::gobj-depends-on)))))
+
 (gl::def-g-correct-thm ;;  g-aig-eval-list-with-bddify-correct
   aig-eval-list-with-bddify aig-eval-ev
   :hints `(("goal" :in-theory (e/d (aig-eval-list-with-bddify)
@@ -536,8 +703,6 @@
 
 (gl::set-preferred-def aig-eval-with-bddify
        aig-eval-in-terms-of-aig-eval-list)
-(gl::set-preferred-def aig-eval-pat-with-bddify
-       aig-eval-pat-in-terms-of-aig-eval-list)
 (gl::set-preferred-def aig-eval-alist-with-bddify
        aig-eval-alist-in-terms-of-aig-eval-list)
 
@@ -545,8 +710,6 @@
                        faig-eval-in-terms-of-faig-eval-list)
 (gl::set-preferred-def faig-eval-list-with-bddify
        faig-eval-list-in-terms-of-aig-eval-list)
-(gl::set-preferred-def faig-eval-pat-with-bddify
-       faig-eval-pat-in-terms-of-faig-eval-list)
 (gl::set-preferred-def faig-eval-alist-with-bddify
        faig-eval-alist-in-terms-of-faig-eval-list)
 
@@ -556,16 +719,10 @@
 (gl::set-preferred-def aig-eval-list aig-eval-list-in-terms-of-with-bddify)
 (table gl::override-props 'aig-eval-list '((recursivep . nil)))
 
-(gl::set-preferred-def aig-eval-pat aig-eval-pat-in-terms-of-with-bddify)
-(table gl::override-props 'aig-eval-pat '((recursivep . nil)))
-
 (gl::set-preferred-def faig-eval faig-eval-in-terms-of-with-bddify)
 
 (gl::set-preferred-def faig-eval-list faig-eval-list-in-terms-of-with-bddify)
 (table gl::override-props 'faig-eval-list '((recursivep . nil)))
-
-(gl::set-preferred-def faig-eval-pat faig-eval-pat-in-terms-of-with-bddify)
-(table gl::override-props 'faig-eval-pat '((recursivep . nil)))
 
 (gl::set-preferred-def aig-eval-alist aig-eval-alist-in-terms-of-with-bddify)
 (table gl::override-props 'aig-eval-alist '((recursivep . nil)))

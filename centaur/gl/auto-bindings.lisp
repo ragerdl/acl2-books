@@ -1,21 +1,38 @@
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
 ; auto-bindings.lisp
-; Original author: Jared Davis
+;
+; Original author: Jared Davis <jared@centtech.com>
 
 (in-package "GL")
-(include-book "gl-doc-string")
 (include-book "gobject-types")
 (include-book "../misc/numlist")
 (include-book "tools/bstar" :dir :system)
 (program)
 
-(defdoc auto-bindings
-  ":Doc-Section ACL2::GL
-Simplified shape specifiers for ~c[:g-bindings].~/
+(defxdoc auto-bindings
+  :parents (reference shape-specs)
+  :short "Simplified shape specifiers for @(':g-bindings')."
+  :long "<p>The @('auto-bindings') function lets you create simple @(see
+shape-specs) in an easy way.  Here is an example:</p>
 
-The ~c[auto-bindings] function lets you create simple ~il[shape-specs] in an
-easy way.  Here is an example:
-
-~bv[]
+@({
  (def-gl-thm foo
    ...
    :g-bindings (auto-bindings               ; expands to:
@@ -27,25 +44,32 @@ easy way.  Here is an example:
                       (:nat c-bus 128))     ; }
                 (:nat fixup-bits 4)         ; g-number with indices 415-420
                 ))
-~ev[]
+})
 
-This is good because (1) you don't have to think about sign bits and do a bunch
-of stupid arithmetic to figure out the next free index, and (2) you can
-painlessly etend the bindings when you want to add a new variable without
-having to update a bunch of indices.~/
+<p>This is good because</p>
 
-Auto-bindings are more limited than shape-specs.  Except for the special
-~c[:mix] command, you can only write:
+<ul>
 
-~bv[]
+<li>you don't have to think about sign bits and do a bunch of stupid arithmetic
+to figure out the next free index, and</li>
+
+<li>you can painlessly etend the bindings when you want to add a new variable
+without having to update a bunch of indices.</li>
+
+</ul>
+
+<p>Auto-bindings are more limited than shape-specs.  Except for the special
+@(':mix') command, you can only write:</p>
+
+@({
     (:bool var)  -- expands to a g-boolean shape-specifier
     (:int var n) -- expands to a g-integer with n bits (signed 2's complement)
     (:nat var n) -- equivalent to (:int var (+ 1 n))
-~ev[]
+})
 
-The ~c[:mix] command cannot be nested and all of its elements must be numbers
-with the same size.  That is, think of a ~c[:nat] as just an abbreviation for
-an ~c[:int] with one more variable.~/")
+<p>The @(':mix') command cannot be nested and all of its elements must be
+numbers with the same size.  That is, think of a @(':nat') as just an
+abbreviation for an @(':int') with one more variable.</p>")
 
 (defun auto-bind-xlate (x inside-mix-p)
   ;; Syntax check that X is (:nat ...), (:int ...), or (:bool ...)

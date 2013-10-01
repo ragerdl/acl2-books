@@ -1,13 +1,28 @@
-
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
-
 (include-book "gobjectp")
 (include-book "bvecs")
 (include-book "tools/bstar" :dir :system)
 (include-book "tools/templates" :dir :system)
-;; (include-book "defapply")
-;; (include-book "defapply-proofs")
 (include-book "cutil/defmvtypes" :dir :system)
 (include-book "../misc/defapply")
 
@@ -183,12 +198,64 @@
      (cons (gobj->term (car x) env)
            (gobj-list->terms (cdr x) env)))))
 
+(mutual-recursion
+ (defun gobj-ind (x env)
+   (declare (xargs :guard (consp env)
+                   :measure (acl2-count x)
+                   :hints (("goal" :in-theory '(measure-for-geval atom)))))
+   (if (atom x)
+       (kwote x)
+     (pattern-match x
+       ((g-concrete obj) (kwote obj))
 
-(flag::make-flag gobj->term-flag gobj->term
-                 :flag-mapping ((gobj->term . gobj)
-                                (gobj-list->terms . list)))
+       ((g-boolean bool) (kwote (bfr-eval bool (car env))))
 
-(in-theory (disable gobj->term gobj-list->terms))
+       ((g-number num)
+        (b* (((mv real-num
+                  real-denom
+                  imag-num
+                  imag-denom)
+              (break-g-number num)))
+          (flet ((uval (n env)
+                       (bfr-list->u n (car env)))
+                 (sval (n env)
+                       (bfr-list->s n (car env))))
+            (kwote
+             (components-to-number (sval real-num env)
+                                   (uval real-denom env)
+                                   (sval imag-num env)
+                                   (uval imag-denom env))))))
+
+       ((g-ite test then else)
+        (list 'if
+              (gobj-ind test env)
+              (gobj-ind then env)
+              (gobj-ind else env)))
+
+       ((g-var name) (kwote (cdr (hons-get name (cdr env)))))
+
+       ((g-apply fn args)
+        (cons fn (gobj-list-ind args env)))
+
+       (& ;; cons
+        (list 'cons
+              (gobj-ind (car x) env)
+              (gobj-ind (cdr x) env))))))
+
+ (defun gobj-list-ind (x env)
+   (declare (xargs :guard (consp env)
+                   :measure (acl2-count x)))
+   (if (atom x)
+       nil
+     (cons (gobj-ind (car x) env)
+           (gobj-list-ind (cdr x) env)))))
+
+
+(flag::make-flag gobj-flag gobj-ind
+                 :flag-mapping ((gobj-ind . gobj)
+                                (gobj-list-ind . list)))
+
+(in-theory (disable gobj-ind gobj-list-ind))
 
 
 (defconst *geval-template*
@@ -248,7 +315,7 @@
                                     ((when ok) val))
                                  (_geval_-ev (cons fn (kwote-lst args))
                                              nil))))))
-            
+
             ;; Var: untyped variable.
             ((g-var name)   (cdr (het name (cdr env))))
 
@@ -398,8 +465,8 @@
 ;;            :do-not-induct t))
 ;;   :rule-classes nil
 ;;   :otf-flg t)
-                     
-           
+
+
 
 ;; (local (defthm generic-geval-appalist-is-instance-of-generic-geval
 ;;          t
@@ -611,7 +678,7 @@
 
 (def-eval-g generic-geval (cons if))
 
-(defthm-gobj->term-flag
+(defthm-gobj-flag
   (defthm generic-geval-is-generic-geval-ev-of-gobj->term
     (equal (generic-geval-ev (gobj->term x env) a)
            (generic-geval x env))

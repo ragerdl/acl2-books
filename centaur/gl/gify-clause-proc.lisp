@@ -1,13 +1,36 @@
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
-
 (include-book "g-if")
 (include-book "clause-processors/unify-subst" :dir :system)
-(local (include-book "tools/def-functional-instance" :dir :system))
 (include-book "tools/defevaluator-fast" :dir :system)
-
+(local (include-book "tools/def-functional-instance" :dir :system))
+(local (include-book "hyp-fix-logic"))
 (local (defun dummy-for-g-if-ev-start () nil))
 
+(defun-nx gobj-depends-on-g-if (n p x)
+  (gobj-depends-on n p (g-if-marker x)))
+
+(defun-nx gobj-depends-on-g-or (n p x)
+  (gobj-depends-on n p (g-or-marker x)))
 
 (acl2::defevaluator-fast g-if-ev g-if-ev-lst
   ((g-if-marker$inline x)
@@ -32,11 +55,16 @@
    (mk-g-boolean bdd)
    (cons a b)
    (binary-+ a b)
-;   (generic-geval x env)
+   ; (generic-geval x env)
    (hide x)
    (bfr-eval x env)
+   (pbfr-depends-on n p x)
+   (gobj-depends-on n p x)
+   (gobj-depends-on-g-if n p x)
+   (gobj-depends-on-g-or n p x)
    (car x)
-   (equal x y))
+   (equal x y)
+   (force x))
   :namedp t)
 
 (local (encapsulate nil
@@ -226,6 +254,156 @@
 (local (include-book "gtype-thms"))
 
 
+
+
+(make-event
+ `(defthm gobj-depends-on-of-g-if-pattern
+    (implies (and (not (gobj-depends-on n p test-term))
+                  (not (gobj-depends-on n p then-term))
+                  (not (gobj-depends-on n p else-term)))
+             (not (gobj-depends-on-g-if n p ,(cadr *g-if-pattern*))))
+    :hints (("goal" :expand ((:free (x) (hide x)))
+             :in-theory (enable g-if-marker
+                                g-test-marker
+                                g-branch-marker
+                                mk-g-bdd-ite)))))
+
+(defthm gobj-depends-on-of-g-if-marker
+  (equal (gobj-depends-on n p (g-if-marker x))
+         (gobj-depends-on-g-if n p x)))
+
+(in-theory (disable gobj-depends-on-g-if))
+
+
+(make-event
+ `(defthm gobj-depends-on-of-g-or-pattern
+    (implies (and (not (gobj-depends-on n p test-term))
+                  (not (gobj-depends-on n p else-term)))
+             (not (gobj-depends-on-g-or n p ,(cadr *g-or-pattern*))))
+    :hints (("goal" :expand ((:free (x) (hide x)))
+             :in-theory (enable g-or-marker
+                                g-test-marker
+                                g-branch-marker
+                                mk-g-bdd-ite)))))
+
+(defthm gobj-depends-on-of-g-or-marker
+  (equal (gobj-depends-on n p (g-or-marker x))
+         (gobj-depends-on-g-or n p x)))
+
+(in-theory (disable gobj-depends-on-g-or))
+
+
+
+(defun simp-if-term (x)
+  (beta-reduce-to-fns
+   (remove-return-lasts x)
+   '(g-test-marker$inline g-branch-marker$inline g-hyp-marker$inline)))
+
+(defthm simp-if-term-correct
+  (implies (pseudo-termp x)
+           (equal (g-if-ev (simp-if-term x) a)
+                  (g-if-ev x a))))
+
+(defthm pseudo-termp-of-simp-if-term
+  (implies (pseudo-termp x)
+           (pseudo-termp (simp-if-term x))))
+
+(local (in-theory (disable simp-if-term)))
+
+(local (defthm pseudo-termp-fourth
+         (implies (pseudo-termp x)
+                  (pseudo-termp (fourth x)))))
+
+
+(defun gobj-depends-on-g-or-hyp (x)
+  (b* (((unless (and (consp x) (eq (car x) 'gobj-depends-on-g-or)))
+        ''nil)
+       (n-term (second x))
+       (p-term (third x))
+       (x-term (fourth x))
+       (x-simp (simp-if-term x-term))
+       ((mv match alist) (acl2::simple-one-way-unify (cadr *g-or-pattern*)
+                                                     x-simp nil))
+       ((unless match) ''nil))
+    `(if (force (not (gobj-depends-on ,n-term ,p-term ,(cdr (assoc 'test-term alist)))))
+         (force (not (gobj-depends-on ,n-term ,p-term ,(cdr (assoc 'else-term alist)))))
+       'nil)))
+
+(defun gobj-depends-on-g-or-res (x)
+  (declare (ignore x))
+  ''nil)
+
+(defthm gobj-depends-on-g-or-meta
+  (implies (and (pseudo-termp x)
+                (g-if-ev (gobj-depends-on-g-or-hyp x) a))
+           (equal (g-if-ev x a)
+                  (g-if-ev (gobj-depends-on-g-or-res x) a)))
+  :hints(("Goal" :in-theory (e/d (g-if-ev-of-fncall-args)
+                                 (gobj-depends-on
+                                  assoc-equal
+                                  gobj-depends-on-of-g-or-pattern)))
+         (let* ((unify '(mv-nth 1 (acl2::simple-one-way-unify
+                                   (cadr *g-or-pattern*)
+                                   (simp-if-term (cadddr x))
+                                   nil))))
+           `(:use ((:instance gobj-depends-on-of-g-or-pattern
+                    (n (g-if-ev (cadr x) a))
+                    (p (g-if-ev (caddr x) a))
+                    (test-term (g-if-ev (cdr (assoc 'test-term ,unify)) a))
+                    (else-term (g-if-ev (cdr (assoc 'else-term ,unify)) a))
+                    (hyp (g-if-ev (cdr (assoc 'hyp ,unify)) a))))))
+         (and stable-under-simplificationp
+              '(:expand ((:free (x) (hide x))))))
+  :rule-classes ((:meta :trigger-fns (gobj-depends-on-g-or))))
+
+
+(defun gobj-depends-on-g-if-hyp (x)
+  (b* (((unless (and (consp x) (eq (car x) 'gobj-depends-on-g-if)))
+        ''nil)
+       (n-term (second x))
+       (p-term (third x))
+       (x-term (fourth x))
+       (x-simp (simp-if-term x-term))
+       ((mv match alist) (acl2::simple-one-way-unify (cadr *g-if-pattern*)
+                                                     x-simp nil))
+       ((unless match) ''nil))
+    `(if (force (not (gobj-depends-on ,n-term ,p-term ,(cdr (assoc 'test-term alist)))))
+         (if (force (not (gobj-depends-on ,n-term ,p-term ,(cdr (assoc 'then-term alist)))))
+             (force (not (gobj-depends-on ,n-term ,p-term ,(cdr (assoc 'else-term alist)))))
+           'nil)
+       'nil)))
+
+(defun gobj-depends-on-g-if-res (x)
+  (declare (ignore x))
+  ''nil)
+
+(defthm gobj-depends-on-g-if-meta
+  (implies (and (pseudo-termp x)
+                (g-if-ev (gobj-depends-on-g-if-hyp x) a))
+           (equal (g-if-ev x a)
+                  (g-if-ev (gobj-depends-on-g-if-res x) a)))
+  :hints(("Goal" :in-theory (e/d (g-if-ev-of-fncall-args)
+                                 (gobj-depends-on
+                                  assoc-equal
+                                  gobj-depends-on-of-g-if-pattern)))
+         (let* ((unify '(mv-nth 1 (acl2::simple-one-way-unify
+                                   (cadr *g-if-pattern*)
+                                   (simp-if-term (cadddr x))
+                                   nil))))
+           `(:use ((:instance gobj-depends-on-of-g-if-pattern
+                    (n (g-if-ev (cadr x) a))
+                    (p (g-if-ev (caddr x) a))
+                    (test-term (g-if-ev (cdr (assoc 'test-term ,unify)) a))
+                    (then-term (g-if-ev (cdr (assoc 'then-term ,unify)) a))
+                    (else-term (g-if-ev (cdr (assoc 'else-term ,unify)) a))
+                    (hyp (g-if-ev (cdr (assoc 'hyp ,unify)) a))))))
+         (and stable-under-simplificationp
+              '(:expand ((:free (x) (hide x))))))
+  :rule-classes ((:meta :trigger-fns (gobj-depends-on-g-if))))
+
+
+
+
 (encapsulate
   (((geval-for-meta * *) => *))
   (local (defun geval-for-meta (x env)
@@ -271,7 +449,7 @@
                (geval-for-meta x b)
              (geval-for-meta y b)))))
 
-         
+
 
 
 
@@ -289,7 +467,7 @@
      (local (add-bfr-pat (bfr-fix . &)))
      (local (in-theory (disable bfr-eval-booleanp
                                 equal-of-booleans-rewrite)))
- 
+
 
 
      (defthm geval-for-meta-mk-g-bdd-ite-correct
@@ -298,9 +476,11 @@
                        (if (bfr-eval bdd (car env))
                            (geval-for-meta then env)
                          (geval-for-meta else env))))
-       :hints(("Goal" :in-theory (enable true-under-hyp
-                                         false-under-hyp
-                                         mk-g-bdd-ite)
+       :hints(("Goal" :in-theory (e/d (mk-g-bdd-ite
+                                       hyp-ops-correct)
+                                      (hyp-fix
+                                       true-under-hyp
+                                       false-under-hyp))
                :do-not-induct t)
               (bfr-reasoning)))
 
@@ -487,7 +667,7 @@
 ;;              :do-not-induct t)))))
 
 ;; (in-theory (disable g-or-gobjectp-extract))
-  
+
 
 ;; (defun g-or-gobjectp-meta-hyp (x)
 ;;   (b* (((mv ok term) (g-or-gobjectp-extract x 'extract))
@@ -556,7 +736,7 @@
 ;;              :do-not-induct t)))))
 
 ;; (in-theory (disable g-if-gobjectp-extract))
-  
+
 
 ;; (defun g-if-gobjectp-meta-hyp (x)
 ;;   (b* (((mv ok term) (g-if-gobjectp-extract x 'extract))
@@ -617,7 +797,12 @@
        (bfr-eval x env)
        (car x)
        (equal x y)
-       (geval x env))
+       (geval x env)
+       (force x)
+       (pbfr-depends-on n p x)
+       (gobj-depends-on n p x)
+       (gobj-depends-on-g-if n p x)
+       (gobj-depends-on-g-or n p x))
       :namedp t)
 
      (local (def-ruleset! g-if-or-meta-evaluator-constraints
@@ -674,7 +859,7 @@
                       (geval-for-meta geval)
                       (g-if-ev eval)
                       (g-if-ev-lst eval-lst))))))
-     
+
 
      (local
       (defthm geval-of-g-or-term-subst
@@ -760,7 +945,7 @@
      (defun g-or-geval-meta-subterms-wrapper (x)
        (declare (xargs :guard t))
        (ec-call (g-or-geval-meta-subterms x 'subterms)))
-    
+
 
      (defthm g-or-geval-meta-subterms-correct
        (mv-let (ok hyp test else env)
@@ -780,7 +965,7 @@
      (in-theory (disable g-or-geval-meta-subterms))
 
      (memoize 'g-or-geval-meta-subterms-wrapper :condition nil)
-             
+
      (defun g-or-geval-meta-hyp (x)
        (b* (((mv ok hyp & & env)
              (g-or-geval-meta-subterms-wrapper x))
@@ -854,7 +1039,7 @@
                   :do-not-induct t)))))
 
      (in-theory (disable g-if-geval-extract))
-  
+
 
      (defun g-if-geval-meta-subterms (x dummy)
        (declare (ignore dummy))
@@ -875,7 +1060,7 @@
      (defun g-if-geval-meta-subterms-wrapper (x)
        (declare (xargs :guard t))
        (ec-call (g-if-geval-meta-subterms x 'subterms)))
-    
+
 
      (defthm g-if-geval-meta-subterms-correct
        (mv-let (ok hyp test then else env)
@@ -897,7 +1082,7 @@
      (in-theory (disable g-if-geval-meta-subterms))
 
      (memoize 'g-if-geval-meta-subterms-wrapper :condition nil)
-             
+
      (defun g-if-geval-meta-hyp (x)
        (b* (((mv ok hyp & & & env)
              (g-if-geval-meta-subterms-wrapper x))
@@ -1000,7 +1185,7 @@
 
 ;; test.
 (local (def-geval-meta generic-geval generic-gify-ev generic-gify-ev-lst))
-                                  
+
 
 
 
@@ -1106,10 +1291,10 @@
 ;;                    (mv erp (cons x gobj-assms) gnorm-assms obligs)))
 ;;              (mv "bad or" gobj-assms gnorm-assms obligs))))
 ;;         (&
-         
-         
-              
-        
+
+
+
+
 
 
 

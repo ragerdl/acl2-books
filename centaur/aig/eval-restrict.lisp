@@ -23,10 +23,11 @@
 
 (in-package "ACL2")
 
-(include-book "base")
+(include-book "aig-base")
 (include-book "aig-equivs")
-(include-book "three-four")
 (include-book "aig-vars")
+(include-book "faig-constructors") ;; bozo?
+(include-book "faig-equivs")       ;; bozo?
 
 (in-theory (disable aig-env-lookup))
 (in-theory (disable aig-restrict))
@@ -119,13 +120,6 @@
 (defsection aig-eval-alist-thms
   :extension aig-eval-alist
 
-  (defthm hons-assoc-equal-aig-eval-alist
-    (equal (hons-assoc-equal key (aig-eval-alist x env))
-           (and (hons-assoc-equal key x)
-                (cons key
-                      (aig-eval (cdr (hons-assoc-equal key x)) env))))
-    :hints(("Goal" :induct t)))
-
   (defcong aig-alist-equiv alist-equiv (aig-eval-alist x env) 1
     :hints((witness)))
 
@@ -156,13 +150,6 @@
   :extension aig-restrict
 
   (local (in-theory (enable aig-restrict)))
-
-  (defthm aig-eval-of-aig-restrict
-    (equal (aig-eval (aig-restrict x al1) al2)
-           (aig-eval x (append (aig-eval-alist al1 al2) al2)))
-    :hints(("Goal"
-            :induct t
-            :in-theory (enable aig-env-lookup))))
 
   (defcong aig-equiv aig-equiv (aig-restrict x al) 1
     :hints((witness :ruleset aig-equiv-witnessing)))
@@ -766,7 +753,7 @@ constant false, whereas the car of @('y') is @('t'), constant true.</p>
 (defmacro prove-faig-congruences (f args)
   `(progn . ,(prove-faig-congruences-fn (len args) f args)))
 
-(prove-faig-congruences t-aig-fix (a))
+(prove-faig-congruences f-aig-unfloat (a))
 (prove-faig-congruences t-aig-not (a))
 (prove-faig-congruences f-aig-not (a))
 (prove-faig-congruences t-aig-and (a b))
@@ -781,29 +768,8 @@ constant false, whereas the car of @('y') is @('t'), constant true.</p>
 (prove-faig-congruences f-aig-ite (c a b))
 (prove-faig-congruences t-aig-ite* (c a b))
 (prove-faig-congruences f-aig-ite* (c a b))
-(prove-faig-congruences t-aig-buf (c a))
+(prove-faig-congruences f-aig-zif (c a b))
+(prove-faig-congruences t-aig-tristate (c a))
 (prove-faig-congruences f-aig-pullup (a))
-(prove-faig-congruences f-aig-bi-buf (c a b))
 
 
-
-
-;; Pat stuff, could maybe move to EMOD/ESIM books...
-
-(defthm faig-eval-pat-of-faig-restrict-pat
-  (equal (faig-eval-pat pat (faig-restrict-pat pat aigs al1) al2)
-         (faig-eval-pat pat aigs (append (aig-eval-alist al1 al2) al2)))
-  :hints(("Goal" :induct t)))
-
-(defthm faig-eval-pat-of-faig-partial-eval-pat
-  (equal (faig-eval-pat pat (faig-partial-eval-pat pat aigs al1) al2)
-         (faig-eval-pat pat aigs (append al1 al2)))
-  :hints(("Goal" :induct t)))
-
-(defthm faig-eval-pat-of-faig-compose-pat
-  (equal (faig-eval-pat pat (faig-compose-pat pat aigs al1) al2)
-         (faig-eval-pat pat aigs (aig-eval-alist al1 al2)))
-  :hints(("Goal" :induct t)))
-
-(defcong aig-env-equiv equal (faig-eval-pat pat x env) 3
-  :hints(("Goal" :induct t)))

@@ -1,8 +1,24 @@
-
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
-
-
 (include-book "g-logapp")
 (include-book "g-ash")
 (include-book "g-binary-+")
@@ -37,13 +53,15 @@
 (include-book "gl-generic-clause-proc")
 (include-book "def-gl-clause-proc")
 (include-book "gify-thms")
-(include-book "gl-misc-doc")
 (include-book "auto-bindings")
 ;;; Matt K., 2/22/13: Sol Swords suggested commenting out the following
 ;;; include-book form, in order to avoid dependence on ttag :COUNT-BRANCHES-TO
 ;;; from centaur/aig/bddify.lisp.
 ; (include-book "bfr-aig-bddify")
 (include-book "g-gl-mbe")
+
+(include-book "doc")
+(include-book "tutorial")
 
 (local (include-book "general-object-thms"))
 (local (include-book "eval-g-base-help"))
@@ -55,6 +73,7 @@
 (defmacro def-g-simple (name body)
   `(progn (def-g-fn ,name ,body)
           (verify-g-guards ,name)
+          (def-gobj-dependency-thm ,name)
           (def-g-correct-thm ,name eval-g-base)))
 
 ;; complex-rationalp is an odd bird since it doesn't have a definition
@@ -63,58 +82,104 @@
 (def-g-simple complex-rationalp
   `(glr equal
         nil
-        (glr equal 0 (glr imagpart x hyp clk) hyp clk)
-        hyp clk))
+        (glr equal 0 (glr imagpart x hyp clk config bvar-db state) hyp clk config bvar-db state)
+        hyp clk config bvar-db state))
 
 
 (def-g-simple acl2::boolfix
   `(g-if x t nil))
 
 (def-g-simple implies
-  `(g-or (glr not p hyp clk)
-         (glr acl2::boolfix q hyp clk)))
+  `(g-or (glr not p hyp clk config bvar-db state)
+         (glr acl2::boolfix q hyp clk config bvar-db state)))
 
 (def-g-simple eq
-  `(glr equal x y hyp clk))
+  `(glr equal x y hyp clk config bvar-db state))
 
 (def-g-simple eql
-  `(glr equal x y hyp clk))
+  `(glr equal x y hyp clk config bvar-db state))
 
 (def-g-simple =
-  `(glr equal x y hyp clk))
+  `(glr equal x y hyp clk config bvar-db state))
 
 (def-g-simple /=
-`(glr not (glr equal x y hyp clk) hyp clk))
+`(glr not (glr equal x y hyp clk config bvar-db state) hyp clk config bvar-db state))
 
 (def-g-simple null
-  `(glr equal x nil hyp clk))
+  `(glr equal x nil hyp clk config bvar-db state))
 
 (def-g-simple atom
-  `(glr not (glr consp x hyp clk) hyp clk))
+  `(glr not (glr consp x hyp clk config bvar-db state) hyp clk config bvar-db state))
 
 (def-g-simple endp
-  `(glr not (glr consp x hyp clk) hyp clk))
+  `(glr not (glr consp x hyp clk config bvar-db state) hyp clk config bvar-db state))
 
 (def-g-simple zerop
-  `(glr equal x 0 hyp clk))
+  `(glr equal x 0 hyp clk config bvar-db state))
 
 (def-g-simple plusp
-  `(glr < 0 x hyp clk))
+  `(glr < 0 x hyp clk config bvar-db state))
 
 (def-g-simple minusp
-  `(glr < x 0 hyp clk))
+  `(glr < x 0 hyp clk config bvar-db state))
 
 (def-g-simple listp
-  `(g-or (glr consp x hyp clk)
-         (glr equal x nil hyp clk)))
+  `(g-or (glr consp x hyp clk config bvar-db state)
+         (glr equal x nil hyp clk config bvar-db state)))
 
 ; Obsolete, now that prog2$ is defined in terms of return-last:
 ; (def-g-simple prog2$
 ;   'y)
 
 
+(def-g-fn hons-assoc-equal
+  `(if (zp clk)
+       (g-apply 'hons-assoc-equal (list acl2::key acl2::alist))
+     (g-if (glc atom acl2::alist)
+           nil
+           (let ((car (glc car acl2::alist)))
+             (g-if (g-if (glc consp car)
+                         (glc equal acl2::key (glc car car))
+                         nil)
+                 car
+                 (let ((clk (1- clk)))
+                   (glc hons-assoc-equal acl2::key (glc cdr acl2::alist)))))))
+  :measure (nfix clk))
 
-(make-g-world (hons-assoc-equal) geval-basis)
+(verify-g-guards hons-assoc-equal)
+
+(local (include-book "tools/trivial-ancestors-check" :dir :system))
+(local (acl2::use-trivial-ancestors-check))
+
+(local (include-book "centaur/misc/beta-reduce-full" :dir :system))
+
+;; Note: In the gobj dependency theorem for hons-assoc-equal, there are some
+;; HIDEs in the induction hyp that need to match HIDEs created by the rewriter,
+;; but they seem to sometimes differ in the order of the bindings.  So we beta
+;; reduce all HIDE terms with the rule below.
+(local (defthm beta-reduce-hides
+         #!acl2 (implies (pseudo-termp x)
+                         (equal (beta-eval x a)
+                                (beta-eval (beta-reduce-full x) a)))
+         :rule-classes ((:meta :trigger-fns (hide)))))
+
+(def-gobj-dependency-thm hons-assoc-equal
+  :hints `(("goal" :in-theory (e/d ((:i ,gfn))
+                                   ((:d ,gfn)))
+            :induct ,gcall
+            :expand (,gcall))))
+
+(def-g-correct-thm hons-assoc-equal eval-g-base
+  :hints `(("goal" :in-theory (e/d ((:i ,gfn))
+                                   ((:d ,gfn)))
+            :induct ,gcall
+            :expand (,gcall
+                     (:free (a b) (eval-g-base-list (cons a b) env))
+                     (eval-g-base-list nil env)
+                     (hons-assoc-equal (eval-g-base acl2::key env)
+                                       (eval-g-base acl2::alist env))))))
+
+;; (make-g-world (hons-assoc-equal) geval-basis)
 
 
 
@@ -186,6 +251,40 @@
             obj)
         (hons-g-concrete obj)))))
 
+;; (local (defthm general-concrete-obj-of-car-when-tag
+;;          (implies (and (syntaxp (quotep key))
+;;                        (not (equal (tag x) :g-concrete))
+;;                        (not (equal (tag x) :g-boolean))
+;;                        (not (equal (tag x) :g-number))
+;;                        (not (equal (tag x) :g-ite))
+;;                        (not (equal (tag x) :g-apply))
+;;                        (not (equal (tag x) :g-var))
+;;                        (g-keyword-symbolp key))
+;;                   (not (equal (general-concrete-obj (car x)) key)))
+;;          :hints(("Goal" :in-theory (enable g-keyword-symbolp tag)
+;;                  :expand ((general-concrete-obj (car x)))))))
+
+;; (local (defthm gobj-depends-on-of-general-concrete-obj
+;;          (implies (and (not (gobj-depends-on k p x))
+;;                        (general-concretep x))
+;;                   (not (gobj-depends-on k p (general-concrete-obj x))))
+;;          :hints(("Goal" :in-theory (enable general-concretep
+;;                                            general-concrete-obj
+;;                                            concrete-gobjectp
+;;                                            gobject-hierarchy-lite)
+;;                  :induct t
+;;                  :expand ((:free (a b)
+;;                            (gobj-depends-on k p (cons a b))))))))
+
+
+(defthm gobj-depends-on-of-canonicalize-general-concrete
+  (implies (and (not (gobj-depends-on k p x))
+                (general-concretep x))
+           (not (gobj-depends-on k p (canonicalize-general-concrete x))))
+  :hints(("Goal" :in-theory (enable canonicalize-general-concrete
+                                    gobj-depends-on-when-concrete-gobjectp))))
+
+
 (local
  (progn
    (defthm canonicalize-general-concretep-correct
@@ -234,25 +333,25 @@
 
 (local
  (progn
-   (in-theory (enable geval-basis))
-   (eval-g-prove-f-i geval-basis-f-i
-                     geval-basis generic-geval)
+   (in-theory (e/d (eval-g-base)))
+   (eval-g-prove-f-i eval-g-base-f-i
+                     eval-g-base generic-geval)
 
    (eval-g-functional-instance
     canonical-eval-canonical-general-concretep
-    geval-basis generic-geval)
+    eval-g-base generic-geval)
 
    (eval-g-functional-instance
     canonicalize-general-concretep-correct
-    geval-basis generic-geval)
+    eval-g-base generic-geval)
 
    (eval-g-functional-instance
     generic-geval-cons
-    geval-basis generic-geval)
+    eval-g-base generic-geval)
 
    (eval-g-functional-instance
     general-concrete-obj-correct
-    geval-basis generic-geval)
+    eval-g-base generic-geval)
 
    ;; (defthmd not-keyword-symbolp-car-impl
    ;;   (implies (not (g-keyword-symbolp (car x)))
@@ -271,32 +370,33 @@
    (defthm ev-hons-assoc-equal-when-concrete-key-alistp
      (implies (and (concrete-key-alistp al)
                    (canonical-general-concretep key))
-              (equal (geval-basis
+              (equal (eval-g-base
                       (hons-assoc-equal key al)
                       env)
-                     (hons-assoc-equal (geval-basis key env)
-                                       (geval-basis al env))))
+                     (hons-assoc-equal (eval-g-base key env)
+                                       (eval-g-base al env))))
      :hints (("goal" :in-theory
               (e/d (; gobjectp-car-impl-not-g-types
                     ; canonical-general-concretep-impl-gobjectp
-                    gl-thm::canonical-eval-canonical-general-concretep-for-geval-basis
+                    gl-thm::canonical-eval-canonical-general-concretep-for-eval-g-base
                     ; not-keyword-symbolp-car-impl
 
                     hons-assoc-equal)
                    (canonical-general-concretep
                     general-concretep-def
                     concrete-gobjectp-def
-                    geval-basis
+                    eval-g-base
                     bfr-sat-bdd-unsat
                     (:d hons-assoc-equal)
-                    ;; gl-thm::general-concrete-obj-correct-gobj-fix-for-geval-basis
+                    ;; gl-thm::general-concrete-obj-correct-gobj-fix-for-eval-g-base
                     ))
               :induct (hons-assoc-equal key al)
               :expand ((:free (key) (hons-assoc-equal key al))))
              (and stable-under-simplificationp
                   '(:expand
-                    ((geval-basis al env)
-                     (geval-basis (car al) env))
+                    ((:with eval-g-base (eval-g-base al env))
+                     (:with eval-g-base (eval-g-base (car al) env))
+                     (:free (key a b) (hons-assoc-equal key (cons a b))))
                     ;;                  :in-theory
                     ;;                  (enable tag g-concrete-p g-concrete->obj)
                     ))))))
@@ -312,7 +412,6 @@
      (glc cons (glc cons acl2::key acl2::val) acl2::alist)))
 
 (verify-g-guards hons-acons)
-
 
 ;; (def-gobjectp-thm hons-acons
 ;;   :hints `(("goal" :in-theory
@@ -332,7 +431,9 @@
 
 ;;(local (in-theory (enable canonical-general-concretep-impl-gobjectp)))
 
-(def-g-correct-thm hons-acons geval-basis)
+(def-gobj-dependency-thm hons-acons)
+
+(def-g-correct-thm hons-acons eval-g-base)
 
 
 ;; Jared: changed hons-get-fn-do-hopy to hons-get for new hons
@@ -344,21 +445,24 @@
 
 (verify-g-guards hons-get)
 
+(def-gobj-dependency-thm hons-get)
+
+
 (local
  (progn
    (eval-g-functional-instance
     canonicalize-general-concretep-correct
-    geval-basis generic-geval)
+    eval-g-base generic-geval)
 
    (eval-g-functional-instance
     generic-geval-of-g-concrete-p
-    geval-basis generic-geval)
+    eval-g-base generic-geval)
 
    (eval-g-functional-instance
     eval-concrete-gobjectp
-    geval-basis generic-geval)))
+    eval-g-base generic-geval)))
 
-(def-g-correct-thm hons-get geval-basis)
+(def-g-correct-thm hons-get eval-g-base)
 
 
 ; Jared Note: removed hons-get-fn-do-not-hopy since it's no longer part
@@ -377,7 +481,7 @@
 
 ;; (def-gobjectp-thm hons-get-fn-do-not-hopy)
 ;; (verify-g-guards hons-get-fn-do-not-hopy)
-;; (def-g-correct-thm hons-get-fn-do-not-hopy geval-basis)
+;; (def-g-correct-thm hons-get-fn-do-not-hopy eval-g-base)
 
 ; Jared: changing flush-hons-get-hash-table-link to fast-alist-free
 
@@ -385,7 +489,8 @@
   `(fast-alist-free acl2::alist))
 
 (verify-g-guards fast-alist-free)
-(def-g-correct-thm fast-alist-free geval-basis)
+(def-gobj-dependency-thm fast-alist-free)
+(def-g-correct-thm fast-alist-free eval-g-base)
 
 
 
@@ -393,30 +498,78 @@
   `(flush-hons-get-hash-table-link acl2::alist))
 
 (verify-g-guards flush-hons-get-hash-table-link)
-(def-g-correct-thm flush-hons-get-hash-table-link geval-basis)
+(def-gobj-dependency-thm flush-hons-get-hash-table-link)
+(def-g-correct-thm flush-hons-get-hash-table-link eval-g-base)
 
 
 
+(acl2::defevaluator-fast cl-ev cl-ev-lst ((if a b c)) :namedp t)
+
+(defun dumb-clausify (x)
+  (declare (xargs :guard (pseudo-termp x)))
+  (cond ((atom x) (list (list x)))
+        ((equal x ''t) nil)
+        ((and (eq (car x) 'if)
+              (equal (fourth x) ''nil))
+         (append (dumb-clausify (second x))
+                 (dumb-clausify (third x))))
+        (t (list (list x)))))
+
+(acl2::def-join-thms cl-ev)
+
+(defthm dumb-clausify-correct
+  (iff (cl-ev (conjoin-clauses (dumb-clausify x)) a)
+       (cl-ev x a)))
+
+(defun dumb-clausify-cp (x)
+  (declare (xargs :guard (pseudo-term-listp x)))
+  (if (or (atom x)
+          (consp (cdr x)))
+      (list x)
+    (dumb-clausify (car x))))
+
+(defthm dumb-clausify-cp-correct
+  (implies (and (pseudo-term-listp x)
+                (alistp a)
+                (cl-ev (conjoin-clauses (dumb-clausify-cp x)) a))
+           (cl-ev (disjoin x) a))
+  :rule-classes :clause-processor)
 
 
-(def-gl-clause-processor glcp)
+(def-gl-clause-processor glcp :output nil)
 
-(defmacro gl-bdd-mode ()
-  ":Doc-section ACL2::GL
-Use BDD-based symbolic simulation in GL.~/
-This macro produces an event which sets the GL reasoning mode to use uBDDs,
-This is the default, relatively stable form of GL symbolic simulation.~/~/"
-  '(progn (acl2::defattach bfr-mode bfr-bdd)
-          (acl2::defattach bfr-counterex-mode bfr-counterex-bdd)
-          (acl2::defattach
-           (bfr-sat bfr-sat-bdd)
-           :hints (("goal" :in-theory '(bfr-sat-bdd-unsat))
-                   (and stable-under-simplificationp
-                        '(:in-theory (enable bfr-sat-bdd)))))))
+
+(defsection gl-bdd-mode
+  :parents (modes reference)
+  :short "Use BDD-based symbolic simulation in GL."
+  :long "<p>This macro produces an event which sets the GL reasoning mode to
+use @(see acl2::ubdds).  This is the default form of GL symbolic
+simulation.</p>"
+
+  (defmacro gl-bdd-mode ()
+    '(progn (acl2::defattach bfr-mode bfr-bdd)
+            (acl2::defattach bfr-counterex-mode bfr-counterex-bdd)
+            (acl2::defattach
+             (bfr-sat bfr-sat-bdd)
+             :hints (("goal" :in-theory '(bfr-sat-bdd-unsat))
+                     (and stable-under-simplificationp
+                          '(:in-theory (enable bfr-sat-bdd))))))))
 
 ;; Default to BDD mode.
 (gl-bdd-mode)
 
+(defsection g-int
+  :parents (shape-specs)
+  :short "Create a g-binding for an integer."
+  :long "<p>This is a low-level way to create a custom shape specifier for a
+signed integer.  You might generally prefer higher-level tools like @(see
+auto-bindings).</p>"
+
+  (defun g-int (start by n)
+    (g-number (list (numlist start by n)))))
+
+;; Fix for unsigned-byte-p's recursive definition in ihs books
+(table structural-decomp-defs 'unsigned-byte-p 'unsigned-byte-p)
 
 
 
@@ -469,3 +622,4 @@ This is the default, relatively stable form of GL symbolic simulation.~/~/"
                                     0
                                     (acl2::evisc-tuple 3 6 nil nil))
                                    (break$)))))
+

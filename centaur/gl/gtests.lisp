@@ -1,15 +1,30 @@
-
+; GL - A Symbolic Simulation Framework for ACL2
+; Copyright (C) 2008-2013 Centaur Technology
+;
+; Contact:
+;   Centaur Technology Formal Verification Group
+;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+;   http://www.centtech.com/
+;
+; This program is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free Software
+; Foundation; either version 2 of the License, or (at your option) any later
+; version.  This program is distributed in the hope that it will be useful but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+; more details.  You should have received a copy of the GNU General Public
+; License along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+;
+; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
-
-(set-inhibit-warnings "theory")
-
 (include-book "hyp-fix")
 (include-book "gtypes")
+(include-book "tools/mv-nth" :dir :system)
 (local (include-book "gtype-thms"))
 (local (include-book "hyp-fix-logic"))
-
-(include-book "tools/mv-nth" :dir :system)
+(set-inhibit-warnings "theory")
 
 (defun mk-g-bdd-ite (bdd then else hyp)
   (declare (xargs :guard t))
@@ -30,6 +45,13 @@
   :hints(("Goal" :in-theory (enable true-under-hyp
                                     false-under-hyp))
          (bfr-reasoning)))
+
+(defthm gobj-depends-on-of-mk-g-bdd-ite
+  (implies (and (not (pbfr-depends-on k p bdd))
+                (not (gobj-depends-on k p then))
+                (not (gobj-depends-on k p else)))
+           (not (gobj-depends-on k p (mk-g-bdd-ite bdd then else hyp))))
+  :hints(("Goal" :in-theory (enable mk-g-bdd-ite))))
 
 (in-theory (disable mk-g-bdd-ite))
 
@@ -58,14 +80,14 @@
        (b* (((mv cc uc oc)
              (gobj-nonnil-unknown-obj test hyp))
             (cc-t (th cc))
-            (cc-nil (fh cc)))
+            (cc-nil (fh cc))
+            (uc-nil (fh uc)))
          (cond
-          ((and (fh uc) cc-t)
+          ((and uc-nil cc-t)
            (gobj-nonnil-unknown-obj then hyp))
-          ((and (fh uc) cc-nil)
+          ((and uc-nil cc-nil)
            (gobj-nonnil-unknown-obj else hyp))
           (t (b* ((uc-t (th uc))
-                  (uc-nil (fh uc))
                   (hyp1 (bfr-or cc uc))
                   ((mv c1 u1 o1) (gobj-nonnil-unknown-obj then hyp1))
                   (hyp0 (bfr-or (hf (bfr-not cc)) uc))
@@ -153,7 +175,7 @@
 
 
 
-   (local 
+   (local
     (in-theory (disable (:definition generic-geval)
                         bfr-eval bfr-eval-list
                         components-to-number-alt-def
@@ -238,7 +260,21 @@
                     :do-not '(generalize
                               fertilize
                               eliminate-destructors))))
-     :rule-classes nil)))
+     :rule-classes nil)
+
+   (defthm gobj-depends-on-of-gobj-nonnil-unknown-obj
+     (implies (not (gobj-depends-on k p x))
+              (mv-let (cc uc uo)
+                (gobj-nonnil-unknown-obj x hyp)
+                (and (not (pbfr-depends-on k p cc))
+                     (not (pbfr-depends-on k p uc))
+                     (not (gobj-depends-on k p uo)))))
+     :hints (("goal" :induct (gnuo-ind x hyp)
+              :in-theory (disable hyp-fix))
+             (and stable-under-simplificationp
+                  '(:expand ((gobj-nonnil-unknown-obj x hyp)
+                             (gobj-nonnil-unknown-obj nil hyp)
+                             (gobj-depends-on k p x))))))))
 
 
 
@@ -292,10 +328,14 @@
   :hints (("goal" :use
            ((:instance gobj-nonnil-unknown-obj-correct)))))
 
+(defthm gobj-depends-on-of-gtests
+  (implies (not (gobj-depends-on k p x))
+           (and (not (pbfr-depends-on k p (gtests-nonnil (gtests x hyp))))
+                (not (pbfr-depends-on k p (gtests-unknown (gtests x hyp))))
+                (not (gobj-depends-on k p (gtests-obj (gtests x hyp)))))))
+
+
+
 (in-theory (disable gtests gtestsp gtests-unknown gtests-obj gtests-nonnil))
-
-
-
-
 
 

@@ -28,9 +28,13 @@
 (include-book "defprojection")
 (include-book "define")
 (include-book "defrule")
+(include-book "defredundant")
 
 (defxdoc cutil
-  :short "Centaur Utility Library"
+  :parents (acl2::macro-libraries)
+  :short "The Centaur Utility Library&mdash;automates defining types,
+introducing typed functions, mapping over lists, and other boilerplate stuff,
+with good integration with the @(see acl2::std) libraries."
 
   :long "<p>We provide macros for</p>
 

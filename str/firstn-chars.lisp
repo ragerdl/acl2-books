@@ -54,7 +54,7 @@
              (type string x)
              (type (integer 0 *) n))
     (mbe :logic
-         (take (min n (len (explode x))) (explode x))
+         (take (min (nfix n) (len (explode x))) (explode x))
          :exec
          (let ((n (min n (length x))))
            (if (zp n)
@@ -113,6 +113,19 @@
   (defcong list-equiv list-equiv (append-firstn-chars n x y) 3)
   (defcong charlisteqv charlisteqv (append-firstn-chars n x y) 3)
   (defcong icharlisteqv icharlisteqv (append-firstn-chars n x y) 3))
+
+(defthm consp-of-firstn-chars
+  ;; May be expensive, leaving enabled for now
+  (equal (consp (firstn-chars n x))
+         (and (posp n)
+              (consp (explode x))))
+  :hints (("Goal" :in-theory (enable firstn-chars length))))
+
+(defthm consp-of-firstn-chars-of-1
+  ;; Improved version of a lemma added by David Rager
+  (equal (consp (firstn-chars 1 x))
+         (consp (explode x)))
+  :hints (("Goal" :in-theory (enable firstn-chars length))))
 
 
 #||
