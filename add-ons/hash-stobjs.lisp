@@ -2,6 +2,7 @@
 
 (in-package "ACL2")
 
+(include-book "std/alists/hons-remove-assoc" :dir :system)
 
 ;; Support for stobjs with hash table members.
 ;; To extend the example used in defstobj:
@@ -41,14 +42,8 @@
 ;; we care more about ease of proving guard conjectures than we do
 ;; about how well they perform in the logic.
 
-(defun hons-remove-assoc (x al)
-  (declare (xargs :guard t))
-  (if (atom al)
-      nil
-    (if (and (consp (car al))
-             (equal x (caar al)))
-        (hons-remove-assoc x (cdr al))
-      (cons (car al) (hons-remove-assoc x (cdr al))))))
+
+(local (in-theory (enable hons-remove-assoc)))
 
 (defthm hons-remove-assoc-acl2-count-weak
   (<= (acl2-count (hons-remove-assoc x al)) (acl2-count al))
@@ -73,10 +68,6 @@
 (defthm hons-remove-assoc-repeat
   (equal (hons-remove-assoc k (hons-remove-assoc k al))
          (hons-remove-assoc k al)))
-
-(defthm hons-remove-assoc-commutes
-  (equal (hons-remove-assoc j (hons-remove-assoc k al))
-         (hons-remove-assoc k (hons-remove-assoc j al))))
 
 (local (include-book "arithmetic/top-with-meta" :dir :system))
 
@@ -671,10 +662,15 @@
              (type (access defstobj-field-template
                            field-template
                            :type))
-             (init (access defstobj-field-template
-                           field-template
-                           :init))
              (arrayp (and (consp type) (eq (car type) 'array)))
+             (init0 (access defstobj-field-template
+                            field-template
+                            :init))
+             (creator (get-stobj-creator (if arrayp (cadr type) type)
+                                         wrld))
+             (init (if creator
+                       `(non-exec (,creator))
+                     (kwote init0)))
 ;---<
              (hashp (and (consp type) (eq (car type) 'hash-table)))
              (hash-test (and hashp (cadr type)))
@@ -740,7 +736,7 @@
                               '((ignore i))))
               ,(if resizable
                    `(update-nth ,n
-                                (resize-list (nth ,n ,var) i ',init)
+                                (resize-list (nth ,n ,var) i ,init)
                                 ,var)
                  `(prog2$ (hard-error
                            ',resize-name

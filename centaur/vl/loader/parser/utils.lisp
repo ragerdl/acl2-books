@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -562,7 +572,7 @@ execution) that includes the current location."
 (define vl-parse-warning
   :short "Compatible with @(see seqw).  Produce a warning (not an error,
 doesn't stop execution) that includes the current location."
-  ((type        symbolp "Type for this @(see warning).")
+  ((type        symbolp "Type for this @(see warnings).")
    (description stringp "Short message about what happened.")
    &key
    ((function symbolp) '__function__)
@@ -1049,3 +1059,34 @@ listed types.  Causes an error on EOF."
            (if (mv-nth 0 (vl-match-any-except types))
                t
              nil))))
+
+
+
+(defaggregate vl-endinfo
+  :short "Temporary structure created to parse named endings like
+@('endmodule : foo')."
+
+  :long "<p>SystemVerilog allows many syntactic constructs such as modules,
+user-defined primitives, programs, packages, etc., to optionally be closed
+using a verbose syntax that repeats the name.  For instance, one can write:</p>
+
+@({
+       module foo (...);
+         ...
+       endmodule : foo     // <-- named ending
+})
+
+<p>The ending name must match or it's an error, see \"Block Names\", Section
+9.3.4 of the SystemVerilog-2012 spec.  Note that these named endings aren't
+allowed in Verilog-2005.</p>
+
+<p>An @('vl-endinfo-p') structure is just a temporary structure used by our
+parser when we encounter such an ending.</p>"
+
+  :legiblep nil
+
+  ((name maybe-stringp :rule-classes :type-prescription
+         "The name we matched after the colon, e.g., @('foo') above.")
+
+   (loc  vl-location-p
+         "The location of this name, for mismatch reporting.")))

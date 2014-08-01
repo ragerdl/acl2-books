@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -24,6 +34,7 @@
 (include-book "delays")
 (include-book "strengths")
 (include-book "../../mlib/expr-tools")
+(include-book "../../mlib/port-tools")
 (local (include-book "../../util/arithmetic"))
 
 
@@ -164,11 +175,11 @@
   (mv-let (erp val explore new-warnings)
           (seqw tokens warnings
                 (args := (vl-parse-list-of-ordered-port-connections))
-                (return (vl-arguments nil args)))
+                (return (make-vl-arguments-plain :args args)))
           (if erp
               (seqw tokens warnings
                     (args := (vl-parse-list-of-named-port-connections))
-                    (return (vl-arguments t args)))
+                    (return (make-vl-arguments-named :args args)))
             (mv erp val explore new-warnings))))
 
 
@@ -216,9 +227,9 @@
   (seqw tokens warnings
         (when (vl-is-token? :vl-dot)
           (args := (vl-parse-list-of-named-parameter-assignments))
-          (return (vl-arguments t args)))
+          (return (make-vl-arguments-named :args args)))
         (exprs := (vl-parse-1+-expressions-separated-by-commas))
-        (return (vl-arguments nil (vl-exprlist-to-plainarglist exprs)))))
+        (return (make-vl-arguments-plain :args (vl-exprlist-to-plainarglist exprs)))))
 
 (defparser vl-parse-parameter-value-assignment ()
   :result (vl-arguments-p val)
@@ -267,8 +278,7 @@
                                 :modname modname
                                 :range range
                                 :paramargs paramargs
-                                :portargs (or portargs
-                                              (vl-arguments nil nil))
+                                :portargs (or portargs (make-vl-arguments-plain :args nil))
                                 :atts atts))))
 
 (defparser vl-parse-1+-module-instances (modname paramargs atts)
@@ -299,8 +309,7 @@
         (when (vl-is-token? :vl-pound)
           (paramargs := (vl-parse-parameter-value-assignment)))
         (insts := (vl-parse-1+-module-instances (vl-idtoken->name modid)
-                                                (or paramargs
-                                                    (vl-arguments nil nil))
+                                                (or paramargs (make-vl-arguments-plain :args nil))
                                                 atts))
         (semi := (vl-match-token :vl-semi))
         (return insts)))
@@ -345,9 +354,9 @@
                                                 (vl-idtoken->name inst-id))
                                  :modname modname
                                  :range range
-                                 :paramargs (vl-arguments nil nil)
-                                 :portargs
-                                 (vl-arguments nil (vl-exprlist-to-plainarglist (cons lvalue exprs)))
+                                 :paramargs (make-vl-arguments-plain :args nil)
+                                 :portargs  (make-vl-arguments-plain
+                                             :args (vl-exprlist-to-plainarglist (cons lvalue exprs)))
                                  :str str
                                  :delay delay
                                  :atts atts))))

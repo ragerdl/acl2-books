@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original authors: Jared Davis <jared@centtech.com>
 ;                   Sol Swords <sswords@centtech.com>
@@ -150,6 +160,7 @@ any global @('other-events').</p>
 <dt>:guard-hints, :guard-debug, :verify-guards</dt>
 <dt>:well-founded-relation, :hints</dt>
 <dt>:otf-flg</dt>
+<dt>:ruler-extenders</dt>
 
 <dd>In an ordinary @(see mutual-recursion), each of these @(see xargs) style
 options can be attached to any @('defun') in the clique.  But we usually think
@@ -180,11 +191,10 @@ documentation and rest-events.  As a convenience, if global documentation is
 provided while individual documentation is not, a basic topic will be created
 whose @(':parents') point at the @('clique-name').</dd>
 
-<dd>BOZO does this make sense?  What if clique-name agrees with a function's
-name?  Are we going to accidentally overwrite it?  This is all pretty subtle
-and we should go through the various cases and consider whether they make
-sense.</dd>
-
+<dd>A corner case is when the @('clique-name') agrees with an individual
+function's name.  In this case we try to grab the documentation from
+<i>either</i> the named function or the global options.  To prevent confusion,
+we cause an error if documentation is provided in both places.</dd>
 
 <dt>:ignore-ok val</dt>
 <dt>:irrelevant-formals-ok val</dt>
@@ -214,11 +224,7 @@ options are @(see local) to the definitions; they do not affect the
 })
 
 <p>Each define can also have a :flag option, which governs the name for
-its flag in the flag-function.</p>
-
-
-
-")
+its flag in the flag-function.</p>")
 
 
 
@@ -232,9 +238,10 @@ its flag in the flag-function.</p>
     ;; :measure -- no, individual
     ;; :non-executable -- no, individual
     ;; :split-types -- no, individual
-    ;; :ruler-extenders -- no, individual
+    ;; :ruler-extenders -- no, individual (actually yes, for flag)
     ;; :normalize -- no, individual
     ;; :stobjs -- no, individual
+    :ruler-extenders ;; used for flag
     :guard-hints ;; Appended to guard-hints for all sub-functions.
     :hints       ;; Appended to hints for all sub-functions.
     :guard-debug ;; Must agree with any individual guard-debug settings.
@@ -259,6 +266,7 @@ its flag in the flag-function.</p>
 
      :flag
      :flag-var
+     :flag-local
      :flag-defthm-macro
      :flag-hints
 
@@ -266,6 +274,7 @@ its flag in the flag-function.</p>
      :returns-hints
 
      :verbosep
+     :progn
      )
    *defines-xargs-keywords*))
 
@@ -381,9 +390,6 @@ its flag in the flag-function.</p>
 ;;     (append (defguts->rest-events (car gutslist))
 ;;             (collect-rest-events-from-guts (cdr gutslist)))))
 
-
-
-
 (defun make-fn-defsection (guts cliquename process-returns)
   (b* (((defguts guts) guts)
        (short      (getarg :short          nil guts.kwd-alist))
@@ -400,13 +406,13 @@ its flag in the flag-function.</p>
         ,@(and process-returns
                `((make-event
                   (let* ((world (w state))
-                         (events (returnspec-thms ',guts.name-fn
+                         (events (returnspec-thms ',guts.name
+                                                  ',guts.name-fn
                                                   ',guts.returnspecs
                                                   world)))
                     `(with-output :stack :pop (progn . ,events))))))
         (with-output :stack :pop (progn . ,guts.rest-events))
-      (with-output :on (error) ,(add-signature-from-guts guts))))))
-
+        (with-output :on (error) ,(add-signature-from-guts guts))))))
 
 (defun collect-fn-defsections (gutslist cliquename process-returns)
   (if (atom gutslist)
@@ -425,7 +431,6 @@ its flag in the flag-function.</p>
                 (guts->flag (car gutslist)))
           (collect-flag-mapping (cdr gutslist)))))
 
-
 (defun returnspec-thm-bodies (fnname binds retspecs world)
   (b* (((when (atom retspecs)) nil)
        (body (returnspec-thm-body fnname binds (car retspecs) world))
@@ -433,7 +438,6 @@ its flag in the flag-function.</p>
     (if (eq body t)
         rest
       (cons body rest))))
-
 
 (defun returnspec-thm-ruleclasses-add-corollary (classes body)
   (b* (((when (atom classes)) nil)
@@ -447,7 +451,6 @@ its flag in the flag-function.</p>
             :corollary ,body
             . ,(cdr class))
           rest)))
-       
 
 (defun returnspec-thm-ruleclasses (fnname binds retspecs world)
   (b* (((when (atom retspecs)) nil)
@@ -526,9 +529,6 @@ its flag in the flag-function.</p>
            :hints ,returns-hints)
       `(value-triple :skipped))))
 
-
-                     
-
 (def-primitive-aggregate defines-guts
   (name             ;; name of the defines section
    gutslist         ;; define guts of functions
@@ -554,13 +554,83 @@ its flag in the flag-function.</p>
         (gutslist-find-hints (cdr gutslist)))))
 
 
+; Documentation hack.
+;
+; Case 1: clique-name doesn't clash with the individual function names.  Then
+; everything works out and we'll get reasonable documentation out
+;
+; Case 2: clique-name is the same as some function name.  We don't want to
+; create documentation for "both" the global and local functions.  If we do,
+; the local function will win (because its docs come second) and we'll lose
+; the global docs.  Worse, this can lead to new top-level topics because we
+; can easily end up with topics that are their own parents.
+;
+; A solution.  If we hit case 2, we'll try to "inject" the global docs into the
+; individual function's docs.  (This is better than going the other way around
+; and "extracting" the individual docs, because the individual function gets a
+; nice "signature" block, etc.)
+
+(defun maybe-inject-global-docs
+  (name parentsp parents short long  ;; global clique-name and global docs
+   gutslist                 ;; guts for individual defines, which we'll rewrite
+   )
+  (b* ((__function__ 'maybe-inject-global-docs)
+       ((when (atom gutslist))
+        nil)
+       (rest (maybe-inject-global-docs name parentsp parents short long
+                                       (cdr gutslist)))
+       (guts1 (car gutslist))
+       ((defguts guts1) guts1)
+       ((unless (equal guts1.name name))
+        (cons (car gutslist) rest))
+
+       (sub-short    (getarg :short   nil guts1.kwd-alist))
+       (sub-long     (getarg :long    nil guts1.kwd-alist))
+       (sub-parents  (getarg :parents nil guts1.kwd-alist))
+       (sub-parentsp (consp (assoc :parents guts1.kwd-alist)))
+       ((when (and parentsp sub-parentsp))
+        (raise "Can't give :parents in (~x1 ~x0 ...) because there are global ~
+                :parents in the (~x2 ~x0 ...) form."
+               name 'define 'defines))
+       ((when (and short sub-short))
+        (raise "Can't give :short in (~x1 ~x0 ...) because there is a global ~
+                :short in the (~x2 ~x0 ...) form."
+               name 'define 'defines))
+       ((when (and long sub-long))
+        (raise "Can't give :long in (~x1 ~x0 ...) because there is a global ~
+                :long in the (~x2 ~x0 ...) form."))
+
+       (kwd-alist guts1.kwd-alist)
+       (kwd-alist (delete-assoc :short kwd-alist))
+       (kwd-alist (delete-assoc :long  kwd-alist))
+       (kwd-alist (delete-assoc :parents kwd-alist))
+       (kwd-alist (acons :short (or short sub-short) kwd-alist))
+       (kwd-alist (acons :long  (or long  sub-long) kwd-alist))
+       (kwd-alist (acons :parents (or parents sub-parents) kwd-alist))
+       (new-guts (change-defguts guts1 :kwd-alist kwd-alist)))
+    (cons new-guts rest)))
+
+(defun split-///-defines (name args)
+  (b* (((mv main-stuff rest-events) (split-/// name args))
+       ;; Allow two occurrences of ///.  Up to the first is keywords and
+       ;; definitions, up to the second happens after that but before the
+       ;; rest-events from each of the define forms, and the rest happen after
+       ;; that.
+       ((mv rest-events1 rest-events2) (split-/// name rest-events))
+       ((mv rest-events1 rest-events2)
+        (if rest-events2
+            (mv rest-events1 rest-events2)
+          (mv nil rest-events1))))
+    (mv main-stuff rest-events1 rest-events2)))
+
 (defun defines-fn (name args world)
   (declare (xargs :guard (plist-worldp world)))
   (b* ((__function__ 'defines)
        ((unless (symbolp name))
         (raise "Expected name to be a symbol, but found ~x0." name))
 
-       ((mv main-stuff rest-events) (split-/// name args))
+       ((mv main-stuff rest-events1 rest-events2)
+        (split-///-defines name args))
        ((mv kwd-alist defs)
         (extract-keywords name *defines-keywords* main-stuff nil))
        (gutslist (parse-defines name defs '(:flag) world))
@@ -568,13 +638,30 @@ its flag in the flag-function.</p>
        ((unless (consp (cdr gutslist)))
         (raise "Error in ~x0: expected more than one function." name))
 
-       (short      (getarg :short          nil kwd-alist))
-       (long       (getarg :long           nil kwd-alist))
-       (parents    (getarg :parents        nil kwd-alist))
-       (parents    (if (assoc :parents kwd-alist)
+       (short      (getarg :short   nil kwd-alist))
+       (long       (getarg :long    nil kwd-alist))
+       (parents    (getarg :parents nil kwd-alist))
+       (parents-p  (consp (assoc :parents kwd-alist)))
+       (parents    (if parents-p
                        parents
                      (xdoc::get-default-parents world)))
+       (fnnames    (collect-names-from-guts gutslist))
+
        (want-xdoc-p (or short long parents))
+
+       ((mv short long parents kwd-alist gutslist)
+        (if (and want-xdoc-p (member name fnnames))
+            ;; Special case: move the documentation into the function;
+            ;; don't produce our own section.
+            (mv nil nil nil
+                (delete-assoc :parents
+                              (delete-assoc :short
+                                            (delete-assoc :long kwd-alist)))
+                (maybe-inject-global-docs
+                 name parents-p parents short long gutslist))
+          ;; Normal case: have docs, no function with the same name,
+          ;; make our own section
+          (mv short long parents kwd-alist gutslist)))
 
        (prepwork (getarg :prepwork nil kwd-alist))
        ((unless (true-listp prepwork))
@@ -597,14 +684,13 @@ its flag in the flag-function.</p>
        (aliases     (collect-macro-aliases gutslist))
        (guts-table-exts (collect-guts-alist-exts gutslist))
 
-       (fnnames (collect-names-from-guts gutslist))
-
        (flag-name (if (assoc :flag kwd-alist)
                       (cdr (assoc :flag kwd-alist))
                     (intern-in-package-of-symbol
                      (concatenate 'string (symbol-name name) "-FLAG")
                      name)))
        (flag-var          (getarg :flag-var nil kwd-alist))
+       (flag-local        (getarg :flag-local t kwd-alist))
        (flag-defthm-macro (getarg :flag-defthm-macro nil kwd-alist))
        (flag-hints        (or (getarg :flag-hints nil kwd-alist)
                               (getarg :hints nil kwd-alist)
@@ -625,7 +711,7 @@ its flag in the flag-function.</p>
 
        (thm-macro      (and flag-name
                             (or flag-defthm-macro (flag::thm-macro-name flag-name))))
-       
+
        (fn-sections (collect-fn-defsections gutslist
                                             (and want-xdoc-p name)
                                             (not returns-induct)))
@@ -636,11 +722,15 @@ its flag in the flag-function.</p>
           :gutslist gutslist
           :kwd-alist kwd-alist
           :flag-mapping flag-mapping
-          :flag-defthm-macro thm-macro)))
+          :flag-defthm-macro thm-macro))
 
-    `(encapsulate nil
+       (ruler-extenders (getarg :ruler-extenders nil kwd-alist))
+
+       (prognp (getarg :progn nil kwd-alist)))
+
+    `(,@(if prognp '(progn) '(encapsulate nil))
        (with-output :stack :pop (progn . ,prepwork))
-       (defsection ,name
+       (defsection-progn ,name
          ,@(and parents `(:parents ,parents))
          ,@(and short   `(:short ,short))
          ,@(and long    `(:long ,long))
@@ -662,6 +752,8 @@ its flag in the flag-function.</p>
                                    ,@(and flag-defthm-macro
                                           `(:defthm-macro-name ,flag-defthm-macro))
                                    ,@(and flag-var `(:flag-var ,flag-var))
+                                   ,@(and flag-local `(:local t))
+                                   ,@(and ruler-extenders `(:ruler-extenders ,ruler-extenders))
                                    :hints ,flag-hints))))
 
        (local
@@ -670,16 +762,16 @@ its flag in the flag-function.</p>
              '(in-theory (enable . ,fnnames))
            '(value-triple :invisible))))
 
-       (defsection rest-events
+       (defsection rest-events-1
          ,@(and want-xdoc-p `(:extension ,name))
          ,@(and returns-induct
                 `((make-event
                    (let ((event (returnspec-flag-thm
                                  ',thm-macro ',gutslist ',returns-hints (w state))))
                      `(with-output :stack :pop ,event)))))
-                   
+         (with-output :stack :pop (progn . ,rest-events1))
          ,@fn-sections
-         (with-output :stack :pop (progn . ,rest-events))))))
+         (with-output :stack :pop (progn . ,rest-events2))))))
 
 
 (defmacro defines (name &rest args)

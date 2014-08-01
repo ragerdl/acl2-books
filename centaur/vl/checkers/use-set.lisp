@@ -1,27 +1,36 @@
 ; VL Verilog Toolkit
-; Copyright (C) 2008-2011 Centaur Technology
+; Copyright (C) 2008-2014 Centaur Technology
 ;
 ; Contact:
 ;   Centaur Technology Formal Verification Group
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
 (in-package "VL")
 (include-book "typo-detect")
 (include-book "use-set-report")
-(include-book "../mlib/warnings")
 (include-book "../mlib/allexprs")
 (include-book "../mlib/find-item")
 (local (include-book "../util/arithmetic"))
@@ -35,7 +44,7 @@
 
   :long "<p><b>USE-SET</b> is a simple tool for detecting wires which may be
 unset or unused.  This is a primitive, static analysis that can be carried out
-on the Verilog source tree, and does involve any use of E.</p>
+on the Verilog source tree.</p>
 
 <p><b>Unset</b> wires are those which have no values flowing into them. An
 unset wire should satisfy the following properties:</p>
@@ -122,8 +131,8 @@ want to add additional kinds of information here.</p>")
   (vl-netdecllist-impexp-names (vl-module->netdecls x) nil nil))
 
 (defaggregate vl-wireinfo
-  ((usedp booleanp)
-   (setp  booleanp))
+  ((usedp booleanp :rule-classes :type-prescription)
+   (setp  booleanp :rule-classes :type-prescription))
   :tag :vl-wireinfo
   :short "Information about a single wire.")
 
@@ -291,11 +300,13 @@ want to add additional kinds of information here.</p>")
                                      (alist vl-wireinfo-alistp))
   :returns (mv (new-alist vl-wireinfo-alistp :hyp :fguard)
                (warning-wires string-listp :hyp :fguard))
-  (if (vl-arguments->namedp x)
-      ;; Argresolve should have gotten rid of these.  We just collect up all of
-      ;; the wires, so we can report about them.
-      (mv alist (vl-exprlist-names (vl-namedarglist-allexprs (vl-arguments->args x))))
-    (vl-mark-wires-for-plainarglist (vl-arguments->args x) alist nil)))
+  (vl-arguments-case x
+    :named
+    ;; Argresolve should have gotten rid of these.  We just collect up all of
+    ;; the wires, so we can report about them.
+    (mv alist (vl-exprlist-names (vl-namedarglist-allexprs x.args)))
+    :plain
+    (vl-mark-wires-for-plainarglist x.args alist nil)))
 
 
 (define vl-mark-wires-for-modinst ((x vl-modinst-p)
@@ -467,7 +478,7 @@ we add are</p>
   ((x    vl-module-p  "Module to analyze.")
    (omit string-listp "Names of any special wires to omit,"))
   :returns (mv (new-x vl-module-p :hyp (vl-module-p x))
-               (report-entry vl-useset-report-entry-p :hyp :guard))
+               (report-entry vl-useset-report-entry-p :hyp :fguard))
   (b* (((vl-module x) x)
 
        (warnings x.warnings)
@@ -490,7 +501,7 @@ we add are</p>
 
 
        (declared-wires      (vl-netdecllist->names-exec x.netdecls nil))
-       (declared-wires      (vl-regdecllist->names-exec x.regdecls declared-wires))
+       (declared-wires      (vl-vardecllist->names-exec x.vardecls declared-wires))
 
        (params              (vl-paramdecllist->names-exec x.paramdecls nil))
        ((mv in out inout)   (vl-portdecllist-names-by-direction x.portdecls nil nil nil))
@@ -520,8 +531,6 @@ we add are</p>
        (alist (vl-mark-wires-used (vl-exprlist-names (vl-portdecllist-allexprs x.portdecls)) t alist))
        (alist (vl-mark-wires-used (vl-exprlist-names (vl-netdecllist-allexprs x.netdecls)) t alist))
        (alist (vl-mark-wires-used (vl-exprlist-names (vl-vardecllist-allexprs x.vardecls)) t alist))
-       (alist (vl-mark-wires-used (vl-exprlist-names (vl-regdecllist-allexprs x.regdecls)) t alist))
-       (alist (vl-mark-wires-used (vl-exprlist-names (vl-eventdecllist-allexprs x.eventdecls)) t alist))
        (alist (vl-mark-wires-used (vl-exprlist-names (vl-paramdecllist-allexprs x.paramdecls)) t alist))
 
 ; Now we're on to the core of our analysis.  We sweep through the assignments,
@@ -606,12 +615,7 @@ we add are</p>
 ;:lvalue-inputs lvalue-inputs
                                                          )))
     (fast-alist-free alist)
-    (mv x-prime report-entry))
-  ///
-  (defthm vl-module->name-of-vl-mark-wires-for-module
-    (equal (vl-module->name (mv-nth 0 (vl-mark-wires-for-module x omit)))
-           (vl-module->name x))))
-
+    (mv x-prime report-entry)))
 
 (define vl-mark-wires-for-modulelist
   :short "Carry out use-set analysis on all modules."
@@ -628,8 +632,19 @@ we add are</p>
        ((mv car-prime car-entry) (vl-mark-wires-for-module (car x) omit))
        ((mv cdr-prime cdr-report) (vl-mark-wires-for-modulelist (cdr x) omit)))
     (mv (cons car-prime cdr-prime)
-        (cons car-entry cdr-report)))
-  ///
-  (defthm vl-modulelist->names-of-vl-mark-wires-for-modulelist
-    (equal (vl-modulelist->names (mv-nth 0 (vl-mark-wires-for-modulelist x omit)))
-           (vl-modulelist->names x))))
+        (cons car-entry cdr-report))))
+
+(define vl-design-use-set-report ((x    vl-design-p)
+                                  (omit string-listp))
+  :returns (mv (new-x  vl-design-p)
+               (report vl-useset-report-p))
+  (b* ((x    (vl-design-fix x))
+       (omit (mbe :logic (if (string-listp omit) omit nil)
+                  :exec omit))
+       ((vl-design x) x)
+       ((mv new-mods report)
+        (vl-mark-wires-for-modulelist x.mods omit))
+       (new-x (change-vl-design x :mods new-mods)))
+    (mv new-x report)))
+
+

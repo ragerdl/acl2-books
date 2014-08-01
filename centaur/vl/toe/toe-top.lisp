@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -76,8 +86,7 @@ ensures that every wire has exactly one driver.</li>
 </ol>
 
 <p>Some final sanity checking is done to ensure that the module's inputs and
-outputs are properly marked and there is no <see topic='@(url
-backflow)'>backflow</see> occurring.</p>
+outputs are properly marked and there is no \"backflow\" occurring.</p>
 
 <p>The resulting E module for each Verilog module is saved in the @('esim')
 field of each @(see vl-module-p).</p>")
@@ -110,8 +119,6 @@ field of each @(see vl-module-p).</p>")
        ;; Gather up a message about what unsupported constructs there are.
        (acc nil)
        (acc (if x.vardecls   (cons "variable declarations" acc)  acc))
-       (acc (if x.eventdecls (cons "event declarations" acc)     acc))
-       (acc (if x.regdecls   (cons "reg declarations" acc)       acc))
        (acc (if x.paramdecls (cons "parameter declarations" acc) acc))
        (acc (if x.fundecls   (cons "function declarations" acc)  acc))
        (acc (if x.taskdecls  (cons "task declarations" acc)      acc))
@@ -486,7 +493,7 @@ and extend @('eal') with the newly produced @('esim').</p>"
        ;; module port/port-declarations agree and that there are no unsupported
        ;; constructs.
        (mods (vl-modulelist-check-port-bits mods))
-       ((mv mods failmods) (vl-propagate-errors mods))
+       ((mv mods failmods) (vl-modulelist-propagate-errors mods))
        (names1  (mergesort (vl-modulelist->names mods)))
        (mods    (vl-deporder-sort mods))
        (names2  (vl-modulelist->names mods))
@@ -510,3 +517,12 @@ and extend @('eal') with the newly produced @('esim').</p>"
              (no-duplicatesp-equal (vl-modulelist->names (vl-modulelist-to-e mods))))
     :hints((set-reasoning))))
 
+(define vl-design-to-e ((x vl-design-p))
+  :returns (new-x vl-design-p)
+  (b* ((x (vl-design-fix x))
+       ((vl-design x) x)
+       ((unless (uniquep (vl-modulelist->names x.mods)))
+        (raise "Name clash for modules ~&0."
+               (duplicated-members (vl-modulelist->names x.mods)))
+        x))
+    (change-vl-design x :mods (vl-modulelist-to-e x.mods))))

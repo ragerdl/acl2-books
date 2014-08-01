@@ -166,7 +166,7 @@
 	   (equal (bits x i 0)
 		  (mod x (expt 2 (1+ i))))))
 
-(defthmd bits-bits-sum
+(defthm bits-bits-sum
   (implies (and (integerp x)
                 (integerp y)
                 (integerp i)
@@ -177,7 +177,7 @@
 	   (equal (bits (+ (bits x k 0) y) i j)
 		  (bits (+ x y) i j))))
 
-(defthmd bits-bits-sum-alt
+(defthm bits-bits-sum-alt
   (implies (and (integerp x)
                 (integerp y)
                 (integerp i)
@@ -506,7 +506,10 @@
 	     (equal (bitn x n) 0)))
 
 
-(defthm neg-bitn-2
+;; The rewrite rule neg-bitn-2 has the hypotheses (integerp n) and (< x (- (expt 2 k) (expt 2 n))), 
+;; where n does not occur in the lhs.  When n is bound to a large integer, (expt 2 n) blows up. 
+
+(defthmd neg-bitn-2
     (implies (and (integerp x)
 		  (integerp n)
 		  (integerp k)

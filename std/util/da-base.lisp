@@ -6,21 +6,32 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 ;
-; Additional copyright notice:
+; Additional Copyright Notice.
 ;
-; This file is adapted from Milawa, which is also released under the GPL.
+; This file is adapted from the Milawa Theorem Prover, Copyright (C) 2005-2009
+; Kookamara LLC, which is also available under an MIT/X11 style license.
 
 (in-package "STD")
 (include-book "support")
@@ -86,6 +97,12 @@ reasoning about @('car') in general.</p>"
   (intern-in-package-of-symbol
    (concatenate 'string (symbol-name basename) "->" (symbol-name field))
    basename))
+
+(defun da-accessor-names (basename fields)
+  (if (consp fields)
+      (cons (da-accessor-name basename (car fields))
+            (da-accessor-names basename (cdr fields)))
+    nil))
 
 (defun da-recognizer-name (basename)
   (intern-in-package-of-symbol
@@ -532,27 +549,32 @@ reasoning about @('car') in general.</p>"
 (defun da-alist-name (basename)
   (intern-in-package-of-symbol "ALIST" basename))
 
-(defun da-make-changer-fn-aux (basename fields)
+(defun da-make-changer-fn-aux (basename field-alist)
   ;; Writes the body of the change-foo macro.  For each field, look up whether the
   ;; field is given a value, or else use the accessor to preserve previous value
-  (if (consp fields)
-      (let ((kwd-name (intern-in-package-of-symbol (symbol-name (car fields)) :keyword))
-            (alist    (da-alist-name basename))
-            (x        (da-x basename)))
+  (if (consp field-alist)
+      (let* ((field    (caar field-alist))
+             (acc      (cdar field-alist))
+             (kwd-name (intern-in-package-of-symbol (symbol-name field) :keyword))
+             (alist    (da-alist-name basename))
+             (x        (da-x basename)))
         (cons `(if (assoc ,kwd-name ,alist)
                    (cdr (assoc ,kwd-name ,alist))
-                 (list ',(da-accessor-name basename (car fields)) ,x))
-              (da-make-changer-fn-aux basename (cdr fields))))
+                 (list ',acc ,x))
+              (da-make-changer-fn-aux basename (cdr field-alist))))
     nil))
 
-(defun da-make-changer-fn (basename fields)
+(defun da-make-changer-fn-gen (basename field-alist)
   (let ((alist         (intern-in-package-of-symbol "ALIST" basename))
         (x             (da-x basename))
         (change-foo-fn (da-changer-fn-name basename))
         (foo           (da-constructor-name basename)))
     `(defun ,change-foo-fn (,x ,alist)
        (declare (xargs :mode :program))
-       (cons ',foo ,(cons 'list (da-make-changer-fn-aux basename fields))))))
+       (cons ',foo ,(cons 'list (da-make-changer-fn-aux basename field-alist))))))
+
+(defun da-make-changer-fn (basename fields)
+  (da-make-changer-fn-gen basename (pairlis$ fields (da-accessor-names basename fields))))
 
 (defun da-make-changer (basename fields)
   (let ((x             (da-x basename))
@@ -609,14 +631,14 @@ reasoning about @('car') in general.</p>"
 
 ; SUPPORT FOR B* INTEGRATION
 
-(defun da-patbind-make-field-vars-alist (var fields)
+(defun da-patbind-make-field-acc-alist (var fields-accs)
   ;; Given var = 'foo and fields = '(a b c),
   ;; Constructs '(("FOO.A" . a) ("FOO.B" . b) ("FOO.C" . c))
-  (if (atom fields)
+  (if (atom fields-accs)
       nil
-    (acons (concatenate 'string (symbol-name var) "." (symbol-name (car fields)))
-           (car fields)
-           (da-patbind-make-field-vars-alist var (cdr fields)))))
+    (acons (concatenate 'string (symbol-name var) "." (symbol-name (caar fields-accs)))
+           (cdar fields-accs)
+           (da-patbind-make-field-acc-alist var (cdr fields-accs)))))
 
 (defun da-patbind-find-used-vars (form varstrs acc)
   ;; Varstrs is a list of strings such as "X.FOO" "X.BAR" etc.
@@ -624,6 +646,7 @@ reasoning about @('car') in general.</p>"
   ;; symbol-name is in varstrs.
   (if (atom form)
       (if (and (symbolp form)
+               (not (keywordp form))
                (member-equal (symbol-name form) varstrs)
                (not (member-eq form acc)))
           (cons form acc)
@@ -631,69 +654,23 @@ reasoning about @('car') in general.</p>"
     (da-patbind-find-used-vars (car form) varstrs
                                (da-patbind-find-used-vars (cdr form) varstrs acc))))
 
-(defun da-patbind-alist-to-bindings (name vars valist target)
+(defun da-patbind-alist-to-bindings (vars valist target)
   (if (atom vars)
       nil
-    (let* ((fldname (cdr (assoc-equal (symbol-name (car vars)) valist)))
-           (accessor (da-accessor-name name fldname))
+    (let* ((accessor (cdr (assoc-equal (symbol-name (car vars)) valist)))
            (call     (list accessor target))     ;; (taco->shell foo)
            (binding  (list (car vars) call))) ;; (x.foo (taco->shell foo))
       (cons binding
-            (da-patbind-alist-to-bindings name (cdr vars) valist target)))))
+            (da-patbind-alist-to-bindings (cdr vars) valist target)))))
 
-
-(defxdoc defaggregate-b*-syntax-error
-  :parents (defaggregate)
-  :short "The @(see b*) binders introduced by @(see defaggregate) now cause
-syntax errors in certain cases that were previously accepted."
-
-  :long "<p>Say we have a simple aggregate such as:</p>
-@({
-    (defaggregate employee (name title phone))
-})
-
-<p>Previously the following was a valid (but error-prone!) use of @('b*'):</p>
-
-@({
-    (b* ((x            'oops)
-         ((employee x) (make-employee :name \"Jimmy\"
-                                      :title \"Beta Tester\"
-                                      :phone 3145)))
-      (list :name x.name
-            :title x.title
-            :phone x.phone
-            :whole x))
-})
-
-<p>Here, the @('b*') binder for the aggregate would properly bind the values of
-@('x.name'), @('x.title'), and so forth.  However, it previously <b>did not
-rebind @('x') itself</b>.  So, the result produced by the above is:</p>
-
-@({
-    (:name \"Jimmy\" :title \"Beta Tester\" :phone 3145 :whole oops)
-})
-
-<p>This was counter-intuitive, since it sure looks like @('x') is being
-re-bound to the @('make-employee') call.</p>
-
-<p>To reduce the chance for confusion, we now detect cases like this and cause
-an error.</p>
-
-<h3>Future Plan</h3>
-
-<p>This restriction is a temporary measure, meant to help to ensure that any
-existing code based on @('b*') can be updated safely.</p>
-
-<p>After the release of ACL2 6.5, we will remove this restriction and change
-the way that these @('b*') binders work, so that they will also bind the
-variable itself.</p>
-
-<p>See also <a
-href='https://code.google.com/p/acl2-books/issues/detail?id=41'>Issue 41</a> in
-the acl2-books issue tracker.</p>")
-
-(defun da-patbind-fn (name fields args forms rest-expr)
-  (b* ((- (or (and (tuplep 1 args)
+;; notes: fields-accs is now a mapping from field names to accessors.
+;; Defaggregate itself just needs the field names because it always generates
+;; the accessor names in the same way, but this now could work in a broader
+;; context where the accessors are various different sorts of things.
+(defun da-patbind-fn (name fields-accs args forms rest-expr)
+  (b* (((mv kwd-alist args)
+        (extract-keywords `(da-patbind-fn ',name) '(:quietp) args nil))
+       (- (or (and (tuplep 1 args)
                    (tuplep 1 forms)
                    (symbolp (car args))
                    (not (booleanp (car args))))
@@ -706,62 +683,40 @@ the acl2-books issue tracker.</p>")
                   name (cons (cons name args) forms))))
 
        (var             (car args))
-       (full-vars-alist (da-patbind-make-field-vars-alist var fields))
+       ;; maps variable names (strings) to accessor functions
+       (full-vars-alist (da-patbind-make-field-acc-alist var fields-accs))
        (field-vars      (strip-cars full-vars-alist))
        (used-vars       (da-patbind-find-used-vars rest-expr field-vars nil))
-       ((unless used-vars)
-        (progn$
-         (cw "Note: not introducing any ~x0 field bindings for ~x1, since ~
-              none of its fields appear to be used.~%" name var)
-         rest-expr))
+       (- (or used-vars
+              (cdr (assoc :quietp kwd-alist))
+              (cw "Note: not introducing any ~x0 field bindings for ~x1, ~
+                   since none of its fields appear to be used.~%" name var)))
 
-       ;;(- (cw "Var is ~x0.~%" var))
-       ;;(- (cw "Full vars alist is ~x0.~%" full-vars-alist))
-       ;;(- (cw "Unnecessary field vars are ~x0.~%" unused-vars))
-       ;;(- (cw "Optimized vars alist is ~x0.~%" vars-alist))
-
-       ;; The below is adapted from patbind-nth.  Sol is using (pack binding)
-       ;; to generate a name that is probably unused.  We'll do the same.
-
-       (binding  (if forms (car forms) var))
-       (evaledp  (or (atom binding) (eq (car binding) 'quote)))
-       (target   (if evaledp binding (acl2::pack binding)))
-       (bindings (da-patbind-alist-to-bindings name used-vars full-vars-alist target))
-
-       ;;(- (cw "Binding is ~x0.~%" var))
-       ;;(- (cw "Evaledp is ~x0.~%" var))
-       ;;(- (cw "Target is ~x0.~%" target))
-       ;;(- (cw "New bindings are ~x0.~%" bindings))
-
-       (rest-expr
-        (if (equal var binding)
-            ;; E.g., The something like ((vl-module x) x) -- this is a common pattern
-            ;; and a safe thing to do, so don't cause an error.
-            rest-expr
-          ;; Found something like ((vl-module x) (change-module y ...)) -- we want to
-          ;; make sure x never occurs in the rest-expr now, so that we can bind it in
-          ;; future versions of defaggregate.
-          `(acl2::translate-and-test
-            (lambda (term)
-              (or (not (member ',var (all-vars term)))
-                  (msg "B* binding of ~x0 to ~x1 is not currently allowed.  See :doc ~x2."
-                       ',var ',binding 'defaggregate-b*-syntax-error)))
-            ,rest-expr))))
-
-    (if evaledp
+       (bindings (da-patbind-alist-to-bindings used-vars full-vars-alist var)))
+    (if (eq var (car forms))
+        ;; No need to rebind: this actually turns out to matter for some
+        ;; expansion heuristics in the svex library (3vec-fix), which is
+        ;; annoying because you'd think a (let nil ...) should be equivalent to
+        ;; ... but, well, whatever.
         `(b* ,bindings ,rest-expr)
-      `(let ((,target ,binding))
-         (b* ,bindings
-           (check-vars-not-free (,target) ,rest-expr))))))
+      `(let ((,var ,(car forms)))
+         (declare (ignorable ,var))
+         ;; We know var is used in at least the bindings
+         (b* ,bindings ,rest-expr)))))
 
-(defun da-make-binder (name fields)
+;; more general than da-make-binder: takes the mapping from fields to accessors
+;; instead of generating it
+(defun da-make-binder-gen (name field-alist)
   `(defmacro ,(intern-in-package-of-symbol
                (concatenate 'string "PATBIND-" (symbol-name name))
                name)
      (args forms rest-expr)
-     (da-patbind-fn ',name ',fields args forms rest-expr)))
+     (da-patbind-fn ',name
+                    ',field-alist
+                    args forms rest-expr)))
 
-
+(defun da-make-binder (name fields)
+  (da-make-binder-gen name (pairlis$ fields (da-accessor-names name fields))))
 
 (defun def-primitive-aggregate-fn (basename fields tag)
   (let ((honsp nil)

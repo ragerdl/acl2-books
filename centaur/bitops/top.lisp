@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -25,6 +35,7 @@
 (include-book "equal-by-logbitp")
 (include-book "extra-defs")
 (include-book "fast-logrev")
+(include-book "fast-logext")
 (include-book "ihs-extensions")
 (include-book "ihsext-basics")
 (include-book "install-bit")
@@ -33,7 +44,6 @@
 (include-book "part-select")
 (include-book "rotate")
 (include-book "saturate")
-(include-book "sign-extend")
 (include-book "signed-byte-p")
 
 (defxdoc bitops
@@ -57,7 +67,7 @@ bit-vector operations that are built into ACL2 like @(see logand), @(see ash),
 and @(see logbitp).</li>
 
 <li>Efficient implementations of certain bit-vector operations like @(see
-sign-extend), <see topic='@(url bitops/merge)'>merge operations</see>, <see
+fast-logext), <see topic='@(url bitops/merge)'>merge operations</see>, <see
 topic='@(url bitops/fast-logrev)'>fast-logrev</see>, etc., with lemmas or @(see
 mbe) to relate them to the logically nicer definitions.  These definitions
 generally don't add any logical power, but are useful for developing more
@@ -124,36 +134,7 @@ functions.</p>
 
 <p>Although there is a @('top') book, we generally recommend <b>against</b>
 using it.  Instead, it's generally best to load the individual @(see
-bitops-books) that address your particular needs.</p>
-
-
-<h3>Copyright Information</h3>
-
-<p>Centaur Bitops Library</p>
-
-<p>Copyright (C) 2010-2013 <a href=\"http://www.centtech.com\">Centaur
-Technology</a>.</p>
-
-<p>Contact:</p>
-@({
-Centaur Technology Formal Verification Group
-7600-C N. Capital of Texas Highway, Suite 300
-Austin, TX 78731, USA.
-})
-
-<p>This program is free software; you can redistribute it and/or modify it
-under the terms of the GNU General Public License as published by the Free
-Software Foundation; either version 2 of the License, or (at your option) any
-later version.</p>
-
-<p>This program is distributed in the hope that it will be useful but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
-details.</p>
-
-<p>You should have received a copy of the GNU General Public License along with
-this program; if not, write to the Free Software Foundation, Inc., 51 Franklin
-Street, Suite 500, Boston, MA 02110-1335, USA.</p>")
+bitops-books) that address your particular needs.</p>")
 
 
 
@@ -285,7 +266,7 @@ recursive definitions.</p>
 
 <p>This book defines some optimized signed and unsigned saturation functions.</p>
 
-<h5>@(see bitops/sign-extend)</h5>
+<h5>@(see bitops/fast-logext)</h5>
 
 <p>This book provides an optimized sign-extension functions, and proves them
 equivalent to @(see logext).  These optimizations don't impact reasoning
@@ -318,7 +299,7 @@ often want to non-locally include this book (to get definitions such as
 extracting \"the good parts\" of the richer @('ihs/logops-definitions') book.
 We typically do <b>not</b> load the additional definitions and macros that
 remain in @('ihs/logops-definitions'), or the @('@logops') book which defines
-various four-valued operations.  But it you have some particular reason to want
+various four-valued operations.  But if you have some particular reason to want
 these definitions, it would probably be fine to load them alongside Bitops.</p>
 
 <h5>IHS Lemma Books</h5>
@@ -334,7 +315,7 @@ should probably use a library like @('arithmetic/top') instead; see below.</p>
 <p>The @('ihs/logops-lemmas') book is a key book for bit-vector reasoning in
 ihs.  But you should generally <b>not</b> use it when you are using Bitops,
 because the Bitops book @('ihsext-basics') supersedes it&mdash;it imports the
-good rules and then introduce improved replacements for many of the
+good rules and then introduces improved replacements for many of the
 @('ihsext-basics') rules.</p>
 
 
@@ -359,7 +340,7 @@ mostly incidental, e.g., you have a function that recurs by calling @('(- n
 <p><b>2.</b> The book @('arithmetic/top-with-meta') is only slightly stronger;
 it adds some @(see meta) rules that can more effectively cancel out summands
 and factors that can arise in various equalities and inequalities.  It's a fine
-choice that is about on part with @('arithmetic/top'), but which is superior in
+choice that is about on par with @('arithmetic/top'), but which is superior in
 some cases.</p>
 
 
@@ -372,7 +353,7 @@ arithmetic expressions return integers.  It also features a much stronger
 integration with @(see non-linear-arithmetic) reasoning, which may be
 especially useful when working with @('*') and @('/').</p>
 
-<p>This book is also very compatible with Bitops, and may be a good choice for
+<p>This book is also very compatible with Bitops and may be a good choice for
 cases where @('arithmetic/top-with-meta') is not doing a good enough job with
 respect to the basic arithmetic operations.  Just about the only issue is that
 it has some special support for @('(expt 2 ...)') which overlaps a bit with

@@ -6,21 +6,31 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
 (include-book "bfr")
-
+(include-book "centaur/misc/hons-extra" :dir :system)
 (encapsulate
   (((bfr-sat *) => (mv * * *)))
 
@@ -85,7 +95,8 @@
 ;; corresponding to the decision levels.)  The particular satisfying assignment
 ;; chosen is determined by the sequence of bits in the LST argument.
 (defun to-satisfying-assign (lst bdd)
-  (declare (xargs :hints (("goal" :in-theory (enable acl2-count)))))
+  (declare (xargs :hints (("goal" :in-theory (enable acl2-count)))
+                  :guard (true-listp lst)))
   (cond ((atom bdd) lst)
         ((eq (cdr bdd) nil) (cons t (to-satisfying-assign  lst (car bdd))))
         ((eq (car bdd) nil) (cons nil (to-satisfying-assign  lst (cdr bdd))))
@@ -99,6 +110,7 @@
   :hints(("Goal" :in-theory (enable acl2::eval-bdd acl2::ubddp))))
 
 (defun bfr-ctrex-to-satisfying-assign (assign ctrex)
+  (declare (xargs :guard (true-listp assign)))
   (if (eq (bfr-counterex-mode) t) ;; alist
       ctrex
     (to-satisfying-assign assign ctrex)))
@@ -112,36 +124,55 @@
   (bfr-case :bdd (and x t)
             :aig (acl2::aig-eval x nil)))
 
-
 (defsection bfr-constcheck
   ;; Bfr-constcheck: use SAT (or examine the BDD) to determine whether x is
   ;; constant, and if so return that constant.
+  ;; Returns (mv path-condition-satisfiable x'), where x' is equivalent to x
+  ;; under the path condition.
   (defund bfr-constcheck (x pathcond)
     (declare (xargs :guard t))
     (if (eq pathcond t)
-        (if (bfr-known-value x)
-            (b* (((mv sat ok &) (bfr-sat (bfr-not x))))
-              (if (or sat (not ok))
-                  x
-                t))
-          (b* (((mv sat ok &) (bfr-sat x)))
-            (if (or sat (not ok))
-                x
-              nil)))
-      (b* (((mv sat ok &) (bfr-sat (bfr-and pathcond x)))
+        (mv t ;; path condition sat
+            (if (bfr-known-value x)
+                (b* (((mv sat ok &) (bfr-sat (bfr-not x))))
+                  (if (or sat (not ok))
+                      x
+                    t))
+              (b* (((mv sat ok &) (bfr-sat x)))
+                (if (or sat (not ok))
+                    x
+                  nil))))
+      (b* (((mv sat ok ctrex) (bfr-sat pathcond))
+           ((unless ok) (mv t x)) ;; failed -- conservative result
+           ((unless sat) (mv nil nil)) ;; path condition unsat!
+           (env (bfr-ctrex-to-satisfying-assign nil ctrex))
+           ((acl2::with-fast env))
+           (known-val (bfr-eval x env))
+           ((mv sat ok &) (bfr-sat (bfr-and pathcond
+                                            (if known-val
+                                                ;; know x can be true, see if
+                                                ;; it can be false under pathcond
+                                                (bfr-not x)
+                                              ;; know x can be false...
+                                              x))))
            ((unless (or sat (not ok)))
-            nil)
-           ((mv sat ok &) (bfr-sat (bfr-and pathcond (bfr-not x))))
-           ((unless (or sat (not ok)))
-            t))
-        x)))
+            (mv t known-val)))
+        (mv t x))))
 
   (local (in-theory (enable bfr-constcheck)))
 
+  (defthmd bfr-constcheck-pathcond-unsat
+    (b* (((mv ?pc-sat ?xx) (bfr-constcheck x pathcond)))
+      (implies (not pc-sat)
+               (not (bfr-eval pathcond env))))
+    :hints(("Goal" :in-theory (enable bfr-sat-unsat))))
+
   (defthm bfr-eval-of-bfr-constcheck
-    (implies (bfr-eval pathcond env)
-             (equal (bfr-eval (bfr-constcheck x pathcond) env)
-                    (bfr-eval x env)))
+    (b* (((mv ?pc-sat ?xx) (bfr-constcheck x pathcond)))
+      (implies (bfr-eval pathcond env)
+               (and pc-sat
+                    (equal (bfr-eval xx env)
+                           (bfr-eval x env)))))
     :hints (("goal" :use ((:instance bfr-sat-unsat
                            (prop (bfr-and pathcond x)))
                           (:instance bfr-sat-unsat
@@ -149,11 +180,14 @@
                           (:instance bfr-sat-unsat
                            (prop x))
                           (:instance bfr-sat-unsat
-                           (prop (bfr-not x)))))))
+                           (prop (bfr-not x)))
+                          (:instance bfr-sat-unsat
+                           (prop pathcond))))))
 
   (defthm pbfr-depends-on-of-bfr-constcheck
-    (implies (not (pbfr-depends-on k p x))
-             (not (pbfr-depends-on k p (bfr-constcheck x pathcond))))))
+    (b* (((mv ?pc-sat ?xx) (bfr-constcheck x pathcond)))
+      (implies (not (pbfr-depends-on k p x))
+               (not (pbfr-depends-on k p xx))))))
 
 (defsection bfr-check-true
   ;; Bfr-constcheck: use SAT (or examine the BDD) to determine whether x is
@@ -220,25 +254,32 @@
              (not (pbfr-depends-on k p (bfr-check-false x pathcond))))))
 
 (defsection bfr-force-check
+  ;; Returns (mv pathcond-sat x'), where x' is equivalent to x under the
+  ;; pathcond.  But we only check the pathcond if direction is :both -- in the
+  ;; other cases we assume it's satisfiable.
   (defund bfr-force-check (x pathcond direction)
     (declare (xargs :guard t))
     (case direction
-      ((t) (bfr-check-true x pathcond))
-      ((nil) (bfr-check-false x pathcond))
+      ((t) (mv t (bfr-check-true x pathcond)))
+      ((nil) (mv t (bfr-check-false x pathcond)))
       (otherwise (bfr-constcheck x pathcond))))
 
 
   (local (in-theory (enable bfr-force-check)))
 
   (defthm bfr-eval-of-bfr-force-check
-    (implies (bfr-eval pathcond env)
-             (equal (bfr-eval (bfr-force-check x pathcond dir) env)
-                    (bfr-eval x env)))
+    (b* (((mv ?pc-sat ?xx) (bfr-force-check x pathcond dir)))
+      (implies (bfr-eval pathcond env)
+               (and pc-sat
+                    (equal (bfr-eval xx env)
+                           (bfr-eval x env)))))
     :hints (("goal" :use ((:instance bfr-sat-unsat
                            (prop x))
                           (:instance bfr-sat-unsat
                            (prop (bfr-and pathcond x)))))))
 
   (defthm pbfr-depends-on-of-bfr-force-check
-    (implies (not (pbfr-depends-on k p x))
-             (not (pbfr-depends-on k p (bfr-force-check x pathcond dir))))))
+    (b* (((mv ?pc-sat ?xx) (bfr-force-check x pathcond dir)))
+      (implies (not (pbfr-depends-on k p x))
+               (not (pbfr-depends-on k p xx))))))
+

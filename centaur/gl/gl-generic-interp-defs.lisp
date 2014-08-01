@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Sol Swords <sswords@centtech.com>
 
@@ -23,7 +33,7 @@
 (include-book "gtests")
 (include-book "glcp-templates")
 (include-book "shape-spec-defs")
-(include-book "symbolic-arithmetic-fns")
+(include-book "symbolic-arithmetic")
 (include-book "param")
 (include-book "bfr-sat")
 (include-book "glcp-config")
@@ -44,66 +54,9 @@
   nil)
 
 
-(defmacro glcp-if (test then else &key report)
-  `(b* ((hyp pathcond)
-        (gtests (gtests ,test hyp))
-        (then-hyp (hf (bfr-or (gtests-unknown gtests)
-                               (gtests-nonnil gtests))))
-        (else-hyp (hf (bfr-or (gtests-unknown gtests)
-                               (bfr-not (gtests-nonnil gtests)))))
-        (- (and then-hyp else-hyp ,report))
-        ((glcp-er then)
-         (if then-hyp
-             (let ((pathcond (bfr-and hyp then-hyp)))
-               (declare (ignorable pathcond))
-               ,then)
-           (glcp-value nil)))
-        ((glcp-er else)
-         (if else-hyp
-             (let ((pathcond (bfr-and hyp else-hyp)))
-               (declare (ignorable pathcond))
-               ,else)
-           (glcp-value nil)))
-        (merge (gobj-ite-merge (gtests-nonnil gtests) then else
-                               (bfr-and (bfr-not (gtests-unknown gtests))
-                                         hyp))))
-     (if (hf (gtests-unknown gtests))
-         (glcp-value
-          (mk-g-ite (mk-g-boolean (gtests-unknown gtests))
-                    (mk-g-ite (gtests-obj gtests) then else)
-                    merge))
-       (glcp-value merge))))
-
-
-(defmacro glcp-or (test else)
-  `(b* ((hyp pathcond)
-        (test ,test)
-        (gtests (gtests test hyp))
-        (else-hyp (hf (bfr-or (gtests-unknown gtests)
-                               (bfr-not (gtests-nonnil gtests)))))
-        ((glcp-er else)
-         (if else-hyp
-             (let ((pathcond (bfr-and hyp else-hyp)))
-               (declare (ignorable pathcond))
-               ,else)
-           (glcp-value nil)))
-        (merge (gobj-ite-merge (gtests-nonnil gtests) test else
-                               (bfr-and (bfr-not (gtests-unknown gtests))
-                                         hyp))))
-     (if (hf (gtests-unknown gtests))
-         (glcp-value
-          (mk-g-ite (mk-g-boolean (gtests-unknown gtests))
-                    (mk-g-ite (gtests-obj gtests) test else)
-                    merge))
-       (glcp-value merge))))
-
-
-
-
 (acl2::def-meta-extract glcp-generic-geval-ev glcp-generic-geval-ev-lst)
 
-(encapsulate
-  (((glcp-generic-run-gified * * hyp * * bvar-db state)
+(encapsulate (((glcp-generic-run-gified * * hyp * * bvar-db state)
     => (mv * * hyp)
     :formals (fn actuals hyp clk config bvar-db state)
     :guard (and (symbolp fn)
@@ -210,7 +163,7 @@
           (general-concrete-obj-list (cdr x)))))
 
 
-(mutual-recursion
+(mutual-recursion ;; sublis-into-term
  (defun sublis-into-term (x alist)
    (declare (xargs :guard t))
    (cond ((null x) nil)
@@ -225,8 +178,6 @@
        nil
      (cons (sublis-into-term (car x) alist)
            (sublis-into-list (cdr x) alist)))))
-
-
 
 (defund gl-aside-wormhole (term alist)
   (declare (xargs :guard t))
@@ -249,15 +200,15 @@
 
 
 
-(acl2::def-b*-binder
- rewrite-rule
- #!acl2
- (std::da-patbind-fn 'rewrite-rule
-                     #!GL '(rune hyps lhs rhs equiv subclass heuristic-info)
-                     args forms rest-expr))
-;; Note: careful with this; variable names that are imported symbols yield
-;; names in the other package.  In particular, since we import single-letter
-;; variables from the ACL2 package, use multiletter variables.
+;; BOZO replace with defaggrify-defrec
+(make-event ;; rewrite-rule b* binder
+ `(acl2::def-b*-binder rewrite-rule
+    :body
+    #!acl2
+    (std::da-patbind-fn 'rewrite-rule
+                        #!GL ',(let ((fields '(rune hyps lhs rhs equiv subclass heuristic-info)))
+                                 (pairlis$ fields (std::da-accessor-names 'acl2::rewrite-rule fields)))
+                        args forms rest-expr)))
 
 ;; used for measure
 (defun pos-fix (x)
@@ -290,7 +241,7 @@
     (mv nil val bindings)))
 
 
-(mutual-recursion
+(mutual-recursion ;; gl-term-to-apply-obj
  (defun gl-term-to-apply-obj (x alist)
    (declare (xargs :guard (pseudo-termp x)
                    :verify-guards nil))
@@ -438,7 +389,7 @@
   :hints(("Goal" :in-theory (disable glcp-generic-eval-context-equiv-commute))))
 
 
-(encapsulate nil
+(defsection glcp-generic-eval-context-equiv*-trans
   (local (defthm last-of-append-when-first/last-equal
            (implies (equal (car b) (car (last a)))
                     (equal (car (last (append a (cdr b))))
@@ -1143,7 +1094,7 @@
     (cons '(clause-proc . glcp-generic)
           (pairlis$ names (glcp-put-name-each 'glcp-generic names)))))
 
-(make-event
+(make-event ;; glcp-generic-interp
  (sublis *glcp-generic-template-subst*
          *glcp-interp-template*))
 

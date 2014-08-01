@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -47,7 +57,7 @@
 
 (defparser vl-parse-blocking-or-nonblocking-assignment (atts)
   :guard (vl-atts-p atts)
-  :result (vl-assignstmt-p val)
+  :result (vl-stmt-p val)
   :resultp-of-nil nil
   :fails gracefully
   :count strong
@@ -103,7 +113,7 @@
 
 (defparser vl-parse-task-enable (atts)
   :guard (vl-atts-p atts)
-  :result (vl-enablestmt-p val)
+  :result (vl-stmt-p val)
   :resultp-of-nil nil
   :fails gracefully
   :count strong
@@ -122,7 +132,7 @@
 
 (defparser vl-parse-system-task-enable (atts)
   :guard (vl-atts-p atts)
-  :result (vl-enablestmt-p val)
+  :result (vl-stmt-p val)
   :resultp-of-nil nil
   :fails gracefully
   :count strong
@@ -145,7 +155,7 @@
 
 (defparser vl-parse-disable-statement (atts)
   :guard (vl-atts-p atts)
-  :result (vl-disablestmt-p val)
+  :result (vl-stmt-p val)
   :resultp-of-nil nil
   :fails gracefully
   :count strong
@@ -161,7 +171,7 @@
 
 (defparser vl-parse-event-trigger (atts)
   :guard (vl-atts-p atts)
-  :result (vl-eventtriggerstmt-p val)
+  :result (vl-stmt-p val)
   :resultp-of-nil nil
   :fails gracefully
   :count strong
@@ -175,12 +185,9 @@
 
 
 
-
 ; PARSING CASE STATEMENTS.
 ;
-; See parsetree.lisp for a rudimentary discussion about our handling of compound
-; statements.  In this new approach, case statements are somewhat awkward to handle.
-; The syntax of the case statement is essentially:
+; In Verilog-2005, the syntax of the case statement is essentially:
 ;
 ;    case_kwd (expr) case_item { case_item } endcase
 ;
@@ -197,145 +204,97 @@
 ;     expr { , expr } : stmt
 ;   | default [ : ] stmt
 ;
-; The only reason this is at all awkward is that in the parse tree, we just
-; have one big list of expressions and one big list of statements associated
-; with each statement.  (This is a really wonderful simplification that we did
-; not always have.)  So, what we need to do is collect up all of the
-; expressions and statements throughout this structure and linearize them
-; in some fashion.
+; According to Section 9.5 (page 127) the default statement is optional but at
+; most one default statement is permitted.
 ;
-; A basic note is that a case item such as
+; SystemVerilog-2012 extends case statements in a couple of ways.
 ;
-;    expr1, expr2, expr3 : stmt1
+;   - All case statements can now begin with (optional) 'unique', 'priority',
+;     or 'priority0' keywords.
 ;
-; Is semantically equivalent to three case items,
+;   - There are new "case matches" and "case inside" statements, i.e.,:
 ;
-;    expr1 : stmt1
-;    expr2 : stmt2
-;    expr3 : stmt3
+;        case/casez/casex (...) matches ... endcase
+;        case (...) inside ... endcase
 ;
-; By taking this approach, we can come up with a pairing of expressions and
-; statements that covers the main cases.  This only leaves any "default
-; statement", and the main "test" expression (i.e., the expression following
-; the "case" keyword) to be accounted for.
-;
-; According to Section 9.5 (page 127) the default statement is optional but
-; at most one default statement is permitted.  So, our representation of
-; each case statement will be:
-;
-;   Expressions: test_expr, caseitem_expr1, ..., caseitem_exprN
-;   Statements:  [default_stmt], caseitem_stmt1, ..., caseitem_stmtN
-;
-; In this scheme, we can detect the presence or absence of a default statement
-; by comparing the lengths of the expressions and statements.  I admit that
-; this is completely gross, but I think that the simplification it provides to
-; the rest of our statement handling is so well worth it that I am willing to
-; defend this ugly mess.
-;
-; If you have understood the above, then the parsing of case statements is not
-; difficult to follow.  Our parser just constructs an intermediate structure
-; that more directly captures the semantics of the case statement, and we
-; develop some functions to transform from this intermediate representation
-; into our desired statement structure.
+; The "case matches" and "case inside" forms have different guts, with
+; case_pattern_items or case_inside_items.  So we don't yet support them.
 
-(defaggregate vl-parsed-caseitem
-  ;; Intermediate form for an individual case item.
-  ;;   - Expr is NIL if this is a default case.
-  ;;   - Expr is an expression otherwise.
-  ((expr vl-maybe-expr-p)
-   (stmt vl-stmt-p))
-  :tag :vl-parsed-caseitem
-  :parents (parser))
+(defparser vl-parse-unique-priority ()
+  :result (vl-casecheck-p val)
+  :resultp-of-nil nil
+  :fails gracefully
+  :count strong-on-value
+  (seqw tokens warnings
+        (when (eq (vl-loadconfig->edition config) :verilog-2005)
+          ;; Verilog-2005 doesn't support using "priority", "unique", or
+          ;; "unique0" checks on case statements.
+          (return nil))
+        (unless (vl-is-some-token? '(:vl-kwd-priority :vl-kwd-unique :vl-kwd-unique0))
+          (return nil))
+        (check := (vl-match))
+        (return (case (vl-token->type check)
+                  (:vl-kwd-priority :vl-priority)
+                  (:vl-kwd-unique   :vl-unique)
+                  (:vl-kwd-unique0  :vl-unique0)))))
 
-(deflist vl-parsed-caseitemlist-p (x)
-  ;; Each case_item turns into a list of vl-parsed-caseitems.  This lets
-  ;; us handle "expr1, expr2, expr3 : stmt;" by just building a list of the
-  ;; for "expr1 : stmt; expr2 : stmt; expr3 : stmt;"
-  (vl-parsed-caseitem-p x)
-  :guard t
-  :elementp-of-nil nil)
+(defparser vl-parse-case-type ()
+  :result (vl-casetype-p val)
+  :resultp-of-nil t
+  :fails gracefully
+  :count strong
+  (seqw tokens warnings
+        (type := (vl-match-some-token '(:vl-kwd-case :vl-kwd-casez :vl-kwd-casex)))
+        (return (case (vl-token->type type)
+                  (:vl-kwd-case  nil) ;; if you change this, update resultp-of-nil
+                  (:vl-kwd-casez :vl-casez)
+                  (:vl-kwd-casex :vl-casex)))))
 
-(defprojection vl-parsed-caseitemlist->exprs (x)
-  (vl-parsed-caseitem->expr x)
-  :guard (vl-parsed-caseitemlist-p x))
+; Our parser temporarily abuses the representation of vl-caselist-p and just
+; use a NIL expression list to represent default statements.
 
-(defprojection vl-parsed-caseitemlist->stmts (x)
-  (vl-parsed-caseitem->stmt x)
-  :guard (vl-parsed-caseitemlist-p x)
-  :result-type vl-stmtlist-p)
-
-
-
-(define vl-make-parsed-caseitems ((stmt vl-stmt-p)
-                                  (x vl-exprlist-p))
-  ;; Given a stmt and a list of expressions, this builds the caseitemlist
-  ;; corresponding to "expr1, expr2, ..., exprN : stmt".
-  :returns (caseitemlist vl-parsed-caseitemlist-p :hyp :fguard)
-  (if (atom x)
-      nil
-    (cons (make-vl-parsed-caseitem :stmt stmt :expr (car x))
-          (vl-make-parsed-caseitems stmt (cdr x)))))
-
-
-(define vl-filter-parsed-caseitemlist ((x vl-parsed-caseitemlist-p))
-  ;; Given a list of case items, we walk over the list and gather up any
-  ;; items with NIL expressions (i.e., any "default" cases) into one list,
-  ;; and any items with non-default expressions into the other list.
-  :returns (mv (defaults vl-parsed-caseitemlist-p :hyp :fguard)
-               (non-defaults vl-parsed-caseitemlist-p :hyp :fguard))
-  (b* (((when (atom x))
+(define vl-filter-parsed-caseitemlist ((x vl-caselist-p))
+  ;; Given a list of case items, we walk over the list and gather up any items
+  ;; with NIL expressions (i.e., any "default" cases) into one list, and any
+  ;; items with non-default expressions into the other list.
+  :returns (mv (default-stmts vl-stmtlist-p)
+               (normal-cases  vl-caselist-p))
+  :measure (vl-caselist-count x)
+  (b* ((x (vl-caselist-fix x))
+       ((when (atom x))
         (mv nil nil))
-       ((mv defaults non-defaults)
-        (vl-filter-parsed-caseitemlist (cdr x)))
-       ((when (vl-parsed-caseitem->expr (car x)))
-        (mv defaults (cons (car x) non-defaults))))
-    (mv (cons (car x) defaults) non-defaults))
+       ((mv default-stmts normal-cases) (vl-filter-parsed-caseitemlist (cdr x)))
+       ((cons exprs1 stmt1) (car x))
+       ((when exprs1)
+        ;; Not a default statement
+        (mv default-stmts (cons (car x) normal-cases))))
+    (mv (cons stmt1 default-stmts) normal-cases))
   ///
-  (defmvtypes vl-filter-parsed-caseitemlist (true-listp true-listp))
-
-  (defthm vl-exprlist-p-of-vl-parsed-caseitemlist->exprs-of-vl-filter-parsed-caseitemlist-1
-    (implies (force (vl-parsed-caseitemlist-p x))
-             (vl-exprlist-p
-              (vl-parsed-caseitemlist->exprs
-               (mv-nth 1 (vl-filter-parsed-caseitemlist x)))))))
-
-
-
-; Additional statement constructors
-;
-; We now provide constructor functions for other kinds of statements, so we can
-; take care of all the guard proofs, etc., without having to complicate the
-; mutual recursion.
+  (defmvtypes vl-filter-parsed-caseitemlist (true-listp true-listp)))
 
 (define vl-make-case-statement
-  ((type  (member type '(:vl-kwd-case :vl-kwd-casez :vl-kwd-casex)))
+  ;; Final work to turn the parsed things into a real case statement.
+  ((check vl-casecheck-p)
+   (type  vl-casetype-p)
    (expr  vl-expr-p)
-   (items vl-parsed-caseitemlist-p)
+   (items vl-caselist-p)
    (atts  vl-atts-p))
   ;; This either returns a STMT or NIL for failure.  The only reason it can
   ;; fail is that more than one "default" statement was provided.
-  :returns (stmt? (equal (vl-stmt-p stmt?)
-                         (if stmt? t nil))
-                  :hyp :fguard)
-  (b* (((mv defaults non-defaults)
+  :returns (stmt? (equal (vl-stmt-p stmt?) (if stmt? t nil)))
+  (b* (((mv defaults normal-cases)
         (vl-filter-parsed-caseitemlist items))
        ((when (> (len defaults) 1))
         ;; More than one default statement, fail!
-        nil)
-       (match-exprs (vl-parsed-caseitemlist->exprs non-defaults))
-       (match-stmts (vl-parsed-caseitemlist->stmts non-defaults))
-       (default     (if defaults
-                        (vl-parsed-caseitem->stmt (car defaults))
-                      (make-vl-nullstmt))))
-      (make-vl-casestmt :casetype (case type
-                                    (:vl-kwd-case  nil)
-                                    (:vl-kwd-casex :vl-casex)
-                                    (:vl-kwd-casez :vl-casez))
-                        :test expr
-                        :default default
-                        :exprs match-exprs
-                        :bodies match-stmts
-                        :atts atts)))
+        nil))
+    (make-vl-casestmt :check    check
+                      :casetype type
+                      :test     expr
+                      :caselist normal-cases
+                      :default  (if defaults
+                                    (car defaults)
+                                  (make-vl-nullstmt))
+                      :atts     atts)))
 
 (local (in-theory (disable
 
@@ -367,16 +326,7 @@
                    rationalp-implies-acl2-numberp
                    rationalp-when-integerp
                    set::sets-are-true-lists
-                   vl-assignstmt-p-by-tag-when-vl-atomicstmt-p
-                   vl-atomicstmt-p-by-tag-when-vl-stmt-p
-                   vl-atomicstmt-p-when-vl-deassignstmt-p
-                   vl-deassignstmt-p-by-tag-when-vl-atomicstmt-p
-                   vl-disablestmt-p-by-tag-when-vl-atomicstmt-p
-                   vl-enablestmt-p-by-tag-when-vl-atomicstmt-p
-                   vl-eventtriggerstmt-p-by-tag-when-vl-atomicstmt-p
-                   vl-nullstmt-p-by-tag-when-vl-atomicstmt-p
                    vl-stmt-p-when-member-equal-of-vl-stmtlist-p
-                   vl-stmt-p-when-neither-atomic-nor-compound
                    vl-tokenlist-p-when-subsetp-equal
                    vl-tokenlist-p-when-member-equal-of-vl-tokenlistlist-p
                    ;; new ones
@@ -394,6 +344,8 @@
                    )))
 
 
+
+
 (defparsers parse-statements
 
 ; case_statement ::=
@@ -405,8 +357,9 @@
 ;    expression { ',' expression } ':' statement_or_null
 ;  | 'default' [ ':' ] statement_or_null
 
+  :flag-local nil
  (defparser vl-parse-case-item ()
-   ;; Returns a vl-parsed-caseitemlist-p
+   ;; Returns a vl-caselist-p
    :measure (two-nats-measure (len tokens) 0)
    :verify-guards nil
    (seqw tokens warnings
@@ -415,16 +368,15 @@
            (when (vl-is-token? :vl-colon)
              (:= (vl-match)))
            (stmt := (vl-parse-statement-or-null))
-           (return (list (make-vl-parsed-caseitem :expr nil
-                                                  :stmt stmt))))
+           (return (list (cons nil stmt))))
          (exprs :s= (vl-parse-1+-expressions-separated-by-commas))
          (:= (vl-match-token :vl-colon))
          (stmt := (vl-parse-statement-or-null))
-         (return (vl-make-parsed-caseitems stmt exprs))))
+         (return (list (cons exprs stmt)))))
 
  (defparser vl-parse-1+-case-items ()
    :measure (two-nats-measure (len tokens) 1)
-   ;; Returns a vl-parsed-caseitemlist-p
+   ;; Returns a vl-caselist-p
    ;; We keep reading until 'endcase' is encountered
    (seqw tokens warnings
          (first :s= (vl-parse-case-item))
@@ -438,14 +390,15 @@
    :guard (vl-atts-p atts)
    :measure (two-nats-measure (len tokens) 0)
    (seqw tokens warnings
-         (type := (vl-match-some-token '(:vl-kwd-case :vl-kwd-casez :vl-kwd-casex)))
+         (check := (vl-parse-unique-priority))
+         (type := (vl-parse-case-type))
          (:= (vl-match-token :vl-lparen))
-         (test :s= (vl-parse-expression))
+         (test :s= (vl-parse-expression)) ;; bozo why do we need :s= here??
          (:= (vl-match-token :vl-rparen))
          (items := (vl-parse-1+-case-items))
          (:= (vl-match-token :vl-kwd-endcase))
          (return-raw
-          (let ((stmt (vl-make-case-statement (vl-token->type type) test items atts)))
+          (let ((stmt (vl-make-case-statement check type test items atts)))
             (if (not stmt)
                 (vl-parse-error "Multiple defaults cases in case statement.")
               (mv nil stmt tokens warnings))))))
@@ -643,7 +596,8 @@
        (vl-parse-error "Unexpected EOF.")
      (case (vl-token->type (car tokens))
        ;; Blocking assignment handled below.
-       ((:vl-kwd-case :vl-kwd-casez :vl-kwd-casex)
+       ((:vl-kwd-case :vl-kwd-casez :vl-kwd-casex
+         :vl-kwd-unique :vl-kwd-unique0 :vl-kwd-priority)
         (vl-parse-case-statement atts))
        (:vl-kwd-if
         (vl-parse-conditional-statement atts))
@@ -874,16 +828,22 @@
   (defmacro vl-stmt-claim (name type &key args extra-hyps true-listp)
     (vl-stmt-claim-fn name args extra-hyps type true-listp))
 
+  (local (defthm vl-caselist-p-of-append
+           (implies (and (vl-caselist-p x)
+                         (vl-caselist-p y))
+                    (vl-caselist-p (append x y)))
+           :hints(("Goal" :induct (len x)))))
+
   (with-output
     :off prove :gag-mode :goals
     (make-event
      `(defthm-parse-statements-flag vl-parse-statement-type
 
         ,(vl-stmt-claim vl-parse-case-item
-                        (vl-parsed-caseitemlist-p val)
+                        (vl-caselist-p val)
                         :true-listp t)
         ,(vl-stmt-claim vl-parse-1+-case-items
-                        (vl-parsed-caseitemlist-p val)
+                        (vl-caselist-p val)
                         :true-listp t)
         ,(vl-stmt-claim vl-parse-case-statement
                         (vl-stmt-p val)

@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original authors: Jared Davis <jared@centtech.com>
 ;                   Sol Swords <sswords@centtech.com>
@@ -28,7 +38,7 @@
 
 (defxdoc defrule
   :parents (std/util)
-  :short "A slightly enhanced version of @(see defthm)."
+  :short "An enhanced version of @(see defthm)."
 
   :long "<p>@('defrule') is a drop-in replacement for @('defthm') that
 adds:</p>
@@ -48,6 +58,11 @@ with @(see acl2::rulesets) integration.</li>
 
 <li>Integration with @(see xdoc).  You can give @(':parents'), @(':short'), and
 @(':long') documentation right at the top level of the @('defrule').</li>
+
+<li>The ability to make the theorem local.</li>
+
+<li>The ability to provide lemmas and include books in support of the theorem's
+proof.</li>
 
 </ul>
 
@@ -93,6 +108,17 @@ particular, these keywords are always translated into an @(see acl2::e/d*).</p>
 @(':local').  This results in surrounding the rule with a @(see
 acl2::local).</p>
 
+<h3>Supporting Lemmas and Books</h3>
+
+<p>We often write lemmas in support of one larger theorem.  In this case, you
+can provide these lemmas as a list of events with the @(':prep-lemmas')
+argument.  Note that including a book via the @(':prep-lemmas') keyword does
+not work.</p>
+
+<p>To include a book or many books for use in the main theorem you are proving,
+supply a list of include-book commands with the @(':prep-books')
+argument.</p>
+
 <p>Some examples:</p>
 
 @({
@@ -115,7 +141,24 @@ acl2::local).</p>
   (defrule baz            -->  (local
       ...                        (encapsulate ()
       :local t)                    (defthm baz ...)))
-})")
+})
+
+@({
+  (defrule lets-loop                  --> (defsection lets-loop
+    (equal (+ x y)                          (local
+           (+ y x))                          (encapsulate ()
+                                              (defrule pretend-we-need-this
+    :prep-lemmas                                ...)
+    ((defrule pretend-we-need-this            (defrule pretend-we-need-this-too
+       ...)                                     ...)))
+     (defrule pretend-we-need-this-too        (local (progn (include-book
+       ...))                                                \"arithmetic/top\"
+                                                            :dir :system)))
+    :prep-books                             (defthm lets-loop (equal (+ x y) (+ y x))
+      ((include-book \"arithmetic/top\"             ...))
+      :dir :system)))
+})
+")
 
 (defxdoc defruled
   :parents (defrule)
@@ -135,7 +178,9 @@ generated using @(see defthmd) instead of @(see defthm).</p>")
                  :enable
                  :disable
                  :e/d
-                 :local)
+                 :local
+                 :prep-lemmas
+                 :prep-books)
                acl2::*hint-keywords*))
 
 (defun split-alist (keys al)
@@ -212,6 +257,8 @@ generated using @(see defthmd) instead of @(see defthm).</p>")
        (hints (cdr (assoc :hints kwd-alist)))
        (hints (merge-keyword-hints-alist-into-ordinary-hints hint-alist hints))
        (local (cdr (assoc :local kwd-alist)))
+       (prep-lemmas (cdr (assoc :prep-lemmas kwd-alist)))
+       (prep-books (cdr (assoc :prep-books kwd-alist)))
 
        ((unless (tuplep 1 args))
         (er hard? 'defrule
@@ -227,6 +274,16 @@ generated using @(see defthmd) instead of @(see defthm).</p>")
        (long      (cdr (assoc :long kwd-alist)))
        (want-xdoc (or parents short long))
 
+       (prep-lemmas-form
+        (if prep-lemmas
+            `((local (encapsulate () ,@prep-lemmas)))
+          nil))
+
+       (prep-books-form
+        (if prep-books
+            `((local (progn ,@prep-books)))
+          nil))
+
        (thm `(,(if disablep 'defthmd 'defthm) ,name
                ,formula
                :hints        ,hints
@@ -238,12 +295,18 @@ generated using @(see defthmd) instead of @(see defthm).</p>")
 
        (event
         (if (and (not want-xdoc)
-                 (not theory-hint))
+                 (not theory-hint)
+                 (not prep-lemmas)
+                 (not prep-books))
             thm
           `(defsection ,name
              ,@(and parents `(:parents ,parents))
              ,@(and short   `(:short ,short))
              ,@(and long    `(:long ,long))
+             ,@prep-lemmas-form
+             ,@prep-books-form
+; The theory-hint has to come after the inclusion of books, so we can disable
+; rules that come from the books.
              ,@(and theory-hint
                     `(,theory-hint))
              ,thm))))

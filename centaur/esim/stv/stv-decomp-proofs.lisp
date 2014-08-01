@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 
 
 ; stv-decomp-proofs.lisp -- lemmas for proofs about decomposition of STVs
@@ -28,7 +38,6 @@
 (include-book "centaur/bitops/ihsext-basics" :dir :system)
 (include-book "centaur/misc/outer-local" :dir :system)
 (local (include-book "arithmetic/top-with-meta" :dir :system))
-
 
 (local (in-theory (disable vl::consp-of-car-when-cons-listp
                            set::double-containment
@@ -141,7 +150,8 @@
                                  (4v-sexpr-eval
                                   sexpr-eval-list-norm-env-when-ground-args-p
                                   vl::consp-of-car-when-cons-listp
-                                  consp-under-iff-when-true-listp)))))
+                                  ;consp-under-iff-when-true-listp
+                                  )))))
 
 (local
  (defthm rev-of-4v-sexpr-eval-alist
@@ -225,6 +235,44 @@
 ;;          (4v-sexpr-eval a env)))
 
 
+
+(defun 4v-alist-extract-fast (keys al)
+  (with-fast-alist al
+    (4v-alist-extract keys al)))
+
+(local
+ (encapsulate nil
+   (local (in-theory (disable 4v-sexpr-apply
+                              4v-sexpr-eval
+                              4v-sexpr-eval-list
+                              4v-unfloat
+                              set::union
+                              set::subset
+                              ;consp-under-iff-when-true-listp
+                              subsetp-trans2
+                              subsetp-when-atom-right
+                              4v-alists-agree
+                              sexpr-eval-list-norm-env-when-ground-args-p
+                              4v-sexpr-vars
+                              4v-sexpr-vars-list)))
+   (defthm-4v-sexpr-flag
+     (defthm 4v-sexpr-eval-of-alist-extract
+       (implies (hons-subset (4v-sexpr-vars x) vars)
+                (equal (4v-sexpr-eval x (4v-alist-extract vars env))
+                       (4v-sexpr-eval x env)))
+       :hints ('(:expand ((:free (env) (4v-sexpr-eval x env))
+                          (4v-sexpr-vars x))))
+       :flag sexpr)
+     (defthm 4v-sexpr-eval-list-of-alist-extract
+       (implies (hons-subset (4v-sexpr-vars-list x) vars)
+                (equal (4v-sexpr-eval-list x (4v-alist-extract vars env))
+                       (4v-sexpr-eval-list x env)))
+       :hints ('(:expand ((:free (env) (4v-sexpr-eval-list x env))
+                          (4v-sexpr-vars-list x))))
+       :flag sexpr-list))))
+
+
+
 ;; alist is something consed or appended together; looks for either a final cdr
 ;; or appended element that is a 4v-sexpr-eval-alist and returns its
 ;; sexpr-alist and environment.
@@ -250,49 +298,26 @@
 
 (defthmd 4v-sexpr-eval-list-of-composition
   (implies (and (bind-free (find-composition-in-alist alist) (sexpr-alist env))
-                (force (4v-env-equiv alist
-                                     (append (4v-sexpr-eval-alist sexpr-alist env)
-                                             env))))
+                (equal vars (4v-sexpr-vars-1pass-list (sexpr-rewrite-default-list sexprs)))
+                (4v-env-equiv (4v-alist-extract vars alist)
+                              (4v-alist-extract
+                               vars
+                               (append (4v-sexpr-eval-alist sexpr-alist env)
+                                       env))))
            (equal (4v-sexpr-eval-list sexprs alist)
                   (4v-sexpr-eval-list
                    (4v-sexpr-restrict-list-fast sexprs sexpr-alist)
-                   env))))
-
-(defun 4v-alist-extract-fast (keys al)
-  (with-fast-alist al
-    (4v-alist-extract keys al)))
-
-(local
- (encapsulate nil
-   (local (in-theory (disable 4v-sexpr-apply
-                              4v-sexpr-eval
-                              4v-sexpr-eval-list
-                              4v-unfloat
-                              set::union
-                              set::subset
-                              consp-under-iff-when-true-listp
-                              subsetp-trans2
-                              subsetp-when-atom-right
-                              4v-alists-agree
-                              sexpr-eval-list-norm-env-when-ground-args-p
-                              4v-sexpr-vars
-                              4v-sexpr-vars-list)))
-   (defthm-4v-sexpr-flag
-     (defthm 4v-sexpr-eval-of-alist-extract
-       (implies (hons-subset (4v-sexpr-vars x) vars)
-                (equal (4v-sexpr-eval x (4v-alist-extract vars env))
-                       (4v-sexpr-eval x env)))
-       :hints ('(:expand ((:free (env) (4v-sexpr-eval x env))
-                          (4v-sexpr-vars x))))
-       :flag sexpr)
-     (defthm 4v-sexpr-eval-list-of-alist-extract
-       (implies (hons-subset (4v-sexpr-vars-list x) vars)
-                (equal (4v-sexpr-eval-list x (4v-alist-extract vars env))
-                       (4v-sexpr-eval-list x env)))
-       :hints ('(:expand ((:free (env) (4v-sexpr-eval-list x env))
-                          (4v-sexpr-vars-list x))))
-       :flag sexpr-list))))
-
+                   env)))
+  :hints (("goal" :use ((:instance sexpr-rewrite-list-correct
+                         (rewrites *sexpr-rewrites*) (x sexprs))
+                        (:instance 4v-sexpr-eval-list-of-alist-extract
+                         (x (sexpr-rewrite-default-list sexprs))
+                         (env alist))
+                        (:instance 4v-sexpr-eval-list-of-alist-extract
+                         (x (sexpr-rewrite-default-list sexprs))
+                         (env (append (4v-sexpr-eval-alist sexpr-alist env)
+                                      env))))
+           :in-theory (e/d () (sexpr-rewrite-list-correct)))))
 
 
 (defthmd equal-of-4v-to-nat-sexpr-eval-lists
@@ -479,7 +504,8 @@
 
 (local
  (define stv-decomp-alist-extract (vars al)
-   :returns (al1 pseudo-term-val-alistp :hyp (pseudo-term-val-alistp al))
+   :returns (al1 pseudo-term-val-alistp :hyp (pseudo-term-val-alistp al)
+                 :hints(("Goal" :in-theory (enable pseudo-term-val-alistp))))
    :prepwork ((local (defthm pseudo-termp-lookup-in-pseudo-term-val-alistp
                        (implies (and (pseudo-term-val-alistp x)
                                      (hons-assoc-equal k x))
@@ -511,21 +537,11 @@
 (finish-with-outer-local)
                     
 
-(local (defthm pseudo-term-val-alistp-of-append
-         (implies (and (pseudo-term-val-alistp a)
-                       (pseudo-term-val-alistp b))
-                  (pseudo-term-val-alistp (append a b)))))
-  
-
 (local
  (define stv-decomp-process-alist-term ((x pseudo-termp))
    :returns (mv err (al pseudo-term-val-alistp :hyp :guard))
    :verify-guards nil
-   :prepwork ((local (defthm pseudo-term-val-alistp-of-acons
-                       (equal (pseudo-term-val-alistp (cons (cons key val) rest))
-                              (and (pseudo-termp val)
-                                   (pseudo-term-val-alistp rest)))))
-              (local (in-theory (disable consp-of-car-when-alistp
+   :prepwork ((local (in-theory (disable consp-of-car-when-alistp
                                          pseudo-term-val-alistp))))
    (b* (((when (atom x)) (mv (msg "Couldn't process: ~x0" x) nil))
         ((when (eq (car x) 'quote))

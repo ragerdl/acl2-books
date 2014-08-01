@@ -1,20 +1,30 @@
 ; VL Verilog Toolkit
-; Copyright (C) 2008-2012 Centaur Technology
+; Copyright (C) 2008-2014 Centaur Technology
 ;
 ; Contact:
 ;   Centaur Technology Formal Verification Group
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -23,14 +33,14 @@
 (local (include-book "../../util/arithmetic"))
 
 (define vl-condition-fix
-  ((condition (and (vl-expr-p condition)
-                   (vl-expr->finaltype condition)
-                   (posp (vl-expr->finalwidth condition)))))
+  ((condition vl-expr-p))
+  :guard (and (vl-expr->finaltype condition)
+              (posp (vl-expr->finalwidth condition)))
   :returns (rhs :hyp :fguard
                 (and (vl-expr-p rhs)
                      (equal (vl-expr->finalwidth rhs) 1)
                      (equal (vl-expr->finaltype rhs) :vl-unsigned)))
-  :parents (if-statements)
+  :parents (vl-ifstmt)
   :short "Construct a one-bit wide expression that is equivalent to
 @('condition') in the context of @('if (condition) ...')."
 
@@ -43,9 +53,10 @@ the same as @('if (|condition) ...').</p>
 <p>We build @('|condition') only if we have to.  That is, if @('condition') is
 only one bit wide to begin with, then we just return it unchanged.</p>"
 
-  (if (and (eql (vl-expr->finalwidth condition) 1)
-           (eq (vl-expr->finaltype condition) :vl-unsigned))
-      condition
+  (b* ((condition (vl-expr-fix condition))
+       ((when (and (eql (vl-expr->finalwidth condition) 1)
+                   (eq (vl-expr->finaltype condition) :vl-unsigned)))
+        condition))
     (make-vl-nonatom :op         :vl-unary-bitor
                      :args       (list condition)
                      :finalwidth 1
@@ -54,11 +65,18 @@ only one bit wide to begin with, then we just return it unchanged.</p>"
   (local (in-theory (enable vl-expr-welltyped-p)))
   (defthm vl-expr-welltyped-p-of-vl-condition-fix
     (implies (and (vl-expr-welltyped-p condition)
-                  (force (vl-expr-p condition))
+                  ;(force (vl-expr-p condition))
                   (force (vl-expr->finaltype condition))
                   (force (posp (vl-expr->finalwidth condition))))
-             (vl-expr-welltyped-p (vl-condition-fix condition)))))
-
+             (vl-expr-welltyped-p (vl-condition-fix condition)))
+    :hints(("Goal"
+            :expand ((:free (op args atts finalwidth finaltype)
+                      (vl-expr-welltyped-p
+                       (make-vl-nonatom :op op
+                                        :args args
+                                        :atts atts
+                                        :finalwidth finalwidth
+                                        :finaltype finaltype))))))))
 
 (define vl-condition-neg
   ((condition (and (vl-expr-p condition)
@@ -68,7 +86,7 @@ only one bit wide to begin with, then we just return it unchanged.</p>"
                 (and (vl-expr-p rhs)
                      (equal (vl-expr->finalwidth rhs) 1)
                      (equal (vl-expr->finaltype rhs) :vl-unsigned)))
-  :parents (if-statements)
+  :parents (vl-ifstmt)
   :short "Construct a one-bit wide expression that is equivalent to
 @('!condition')."
 
@@ -122,7 +140,7 @@ is:</p>
                 (and (vl-expr-p ans)
                      (equal (vl-expr->finalwidth ans) 1)
                      (equal (vl-expr->finaltype ans) :vl-unsigned)))
-  :parents (if-statements)
+  :parents (vl-ifstmt)
   :short "Join conditions from nested @('if') expressions."
   :long "<p>For compatibility with @(see oprewrite), we actually build
 something like @('(|outer-cond & |inner-cond)'), except we omit the reduction
@@ -149,3 +167,27 @@ operators where possible.</p>"
                        (posp (vl-expr->finalwidth inner-cond))))
              (vl-expr-welltyped-p
               (vl-condition-merge outer-cond inner-cond)))))
+
+
+(define vl-safe-qmark-expr ((condition  vl-expr-p)
+                            (true-expr  vl-expr-p)
+                            (false-expr vl-expr-p))
+  :returns (new-expr vl-expr-p :hyp :fguard)
+  (b* (((unless (and (posp (vl-expr->finalwidth condition))
+                     (posp (vl-expr->finalwidth true-expr))
+                     (posp (vl-expr->finalwidth false-expr))
+                     (eql (vl-expr->finalwidth true-expr)
+                          (vl-expr->finalwidth false-expr))
+                     (vl-expr->finaltype condition)
+                     (vl-expr->finaltype true-expr)
+                     (vl-expr->finaltype false-expr)))
+        (raise "Bad sizes when trying to construct ?: expression: condition ~
+                ~x0, true ~x1, false ~x2."  condition true-expr false-expr)
+        |*sized-1'bx*|)
+       (new-type (vl-exprtype-max (vl-expr->finaltype true-expr)
+                                  (vl-expr->finaltype false-expr))))
+    (make-vl-nonatom :op :vl-qmark
+                     :args (list (vl-condition-fix condition)
+                                 true-expr false-expr)
+                     :finalwidth (vl-expr->finalwidth true-expr)
+                     :finaltype new-type)))

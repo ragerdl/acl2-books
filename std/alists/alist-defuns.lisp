@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original authors: Jared Davis <jared@centtech.com>
 ;                   Sol Swords <sswords@centtech.com>
@@ -23,14 +33,8 @@
 (include-book "tools/bstar" :dir :system)
 (include-book "../lists/list-defuns")
 (local (include-book "alist-equiv"))
-(local (include-book "alist-keys"))
-(local (include-book "alist-vals"))
-(local (include-book "hons-rassoc-equal"))
-(local (include-book "fal-extract"))
-(local (include-book "fal-extract-vals"))
 (local (include-book "append-alist-keys"))
 (local (include-book "append-alist-vals"))
-(set-enforce-redundancy t)
 
 (defund alist-keys (x)
   (declare (xargs :guard t))
@@ -110,7 +114,8 @@
 
 (defund fal-extract (keys al)
   "Makes AL fast if necessary"
-  (declare (xargs :guard t))
+  (declare (xargs :guard t
+                  :guard-hints(("Goal" :in-theory (enable fal-extract fal-extract1)))))
   (mbe :logic
        (b* (((when (atom keys))
              nil)
@@ -132,7 +137,8 @@
 
 (defund fal-extract-vals (keys al)
   "Makes AL fast if necessary"
-  (declare (xargs :guard t))
+  (declare (xargs :guard t
+                  :guard-hints(("Goal" :in-theory (enable fal-extract-vals fal-extract-vals1)))))
   (mbe :logic
        (if (atom keys)
            nil

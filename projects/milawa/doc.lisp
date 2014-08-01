@@ -1,36 +1,34 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;           __    __        __    __                                        ;;
-;;          /  \  /  \      (__)  |  |    ____   ___      __    ____         ;;
-;;         /    \/    \      __   |  |   / _  |  \  \ __ /  /  / _  |        ;;
-;;        /  /\    /\  \    |  |  |  |  / / | |   \  '  '  /  / / | |        ;;
-;;       /  /  \__/  \  \   |  |  |  |  \ \_| |    \  /\  /   \ \_| |        ;;
-;;      /__/          \__\  |__|  |__|   \____|     \/  \/     \____|        ;;
-;; ~ ~~ \  ~ ~  ~_~~ ~/~ /~ | ~|~ | ~| ~ /~_ ~|~ ~  ~\  ~\~ ~  ~ ~  |~~    ~ ;;
-;;  ~ ~  \~ \~ / ~\~ / ~/ ~ |~ | ~|  ~ ~/~/ | |~ ~~/ ~\/ ~~ ~ / / | |~   ~   ;;
-;; ~ ~  ~ \ ~\/ ~  \~ ~/ ~~ ~__|  |~ ~  ~ \_~  ~  ~  .__~ ~\ ~\ ~_| ~  ~ ~~  ;;
-;;  ~~ ~  ~\  ~ /~ ~  ~ ~  ~ __~  |  ~ ~ \~__~| ~/__~   ~\__~ ~~___~| ~ ~    ;;
-;; ~  ~~ ~  \~_/  ~_~/ ~ ~ ~(__~ ~|~_| ~  ~  ~~  ~  ~ ~~    ~  ~   ~~  ~  ~  ;;
-;;                                                                           ;;
-;;            A   R e f l e c t i v e   P r o o f   C h e c k e r            ;;
-;;                                                                           ;;
-;;       Copyright (C) 2005-2009 by Jared Davis <jared@cs.utexas.edu>        ;;
-;;                                                                           ;;
-;; This program is free software; you can redistribute it and/or modify it   ;;
-;; under the terms of the GNU General Public License as published by the     ;;
-;; Free Software Foundation; either version 2 of the License, or (at your    ;;
-;; option) any later version.                                                ;;
-;;                                                                           ;;
-;; This program is distributed in the hope that it will be useful, but       ;;
-;; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABIL-  ;;
-;; ITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public      ;;
-;; License for more details.                                                 ;;
-;;                                                                           ;;
-;; You should have received a copy of the GNU General Public License along   ;;
-;; with this program (see the file COPYING); if not, write to the Free       ;;
-;; Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA    ;;
-;; 02110-1301, USA.                                                          ;;
-;;                                                                           ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Milawa - A Reflective Theorem Prover
+; Copyright (C) 2005-2009 Kookamara LLC
+;
+; Contact:
+;
+;   Kookamara LLC
+;   11410 Windermere Meadows
+;   Austin, TX 78759, USA
+;   http://www.kookamara.com/
+;
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
+;
+; Original author: Jared Davis <jared@kookamara.com>
 
 (in-package "MILAWA")
 (include-book "xdoc/top" :dir :system)
@@ -405,7 +403,7 @@ manually.</p>
 <p>To get a feel for tactics, and also to branch out a bit, I spent some time
 working with Isabelle/HOL.  I tried modelling my proof checker, figuring that
 if it worked well I could perhaps prove it sound in a higher order system.  I
-even gave a little talk at Isabelle to the ACL2 seminar in October, after which
+even gave a little talk on Isabelle to the ACL2 seminar in October, after which
 I decided this had been a bad digression and had taken me off task.</p>
 
 <p>Still, I think this was a useful in giving me a feel for tactics.  I figured
@@ -414,7 +412,7 @@ developed an initial system of proof \"skeletons\" that could later be filled
 in by a tactic compiler, and wrote some simple tactics for removing trivial and
 duplicate literals from clauses.</p>
 
-<p>This seemed like it would work well, so and decided that my first
+<p>This seemed like it would work well, so I decided that my first
 interesting tactic would be a clausifier and if-lifting program.  It wasn't
 easy to see that the algorithm terminated, and unfortunately the proof was
 interesting enough that I kept at it.  I probably spent two or three weeks on
@@ -536,7 +534,7 @@ managed to answer most of their questions.</p>
 
 <p>I defended in September and somehow passed.  It was good to meet John
 Harrison, who gave me many useful comments and corrections.  We celebrated with
-a nice dinner.  After a few week break, I finished the corrections and received
+a nice dinner.  After a few weeks break, I finished the corrections and received
 the blessings of the ruler lady, and that was that for grad school.</p>
 
 

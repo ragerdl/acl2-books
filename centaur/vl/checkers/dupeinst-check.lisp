@@ -1,29 +1,39 @@
 ; VL Verilog Toolkit
-; Copyright (C) 2008-2013 Centaur Technology
+; Copyright (C) 2008-2014 Centaur Technology
 ;
 ; Contact:
 ;   Centaur Technology Formal Verification Group
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
 (in-package "VL")
 (include-book "../mlib/expr-tools")
-(include-book "../mlib/fix")
+(include-book "../mlib/port-tools")
+(include-book "../mlib/strip")
 (include-book "../mlib/writer")
 (local (include-book "../util/arithmetic"))
-
 
 (defxdoc dupeinst-check
   :parents (checkers)
@@ -48,9 +58,9 @@ given to multiple inverters.</p>
 want to identify and eliminate.  For instance, it's especially useful to
 eliminate redundant registers, to improve power usage.</p>")
 
+(local (xdoc::set-default-parents dupeinst-check))
 
 (defaggregate vl-dupeinst-key
-  :parents (dupeinst-check)
   :short "Keys used to determine if module instances have the same inputs."
 
   ((modname stringp :rule-classes :type-prescription
@@ -94,7 +104,6 @@ all in practice.</p>
   :val (vl-modinstlist-p x)
   :keyp-of-nil nil
   :valp-of-nil t
-  :parents (dupeinst-check)
   :long "<p>The basic idea is to bind keys to the lists of modinsts that have
 that key, which lets us immediately see which modinsts have the same key.</p>
 @(def vl-dupeinst-alistp)")
@@ -110,12 +119,12 @@ that key, which lets us immediately see which modinsts have the same key.</p>
        (x1 (car x))
        ((vl-modinst x1) x1)
 
-       ((when (vl-arguments->namedp x1.portargs))
+       ((when (eq (vl-arguments-kind x1.portargs) :named))
         ;; Args not resolved, skip it
         (vl-make-dupeinst-alist-aux (cdr x) alist))
 
        ((mv inputs ?outputs inouts unknowns)
-        (vl-partition-plainargs (vl-arguments->args x1.portargs) nil nil nil nil))
+        (vl-partition-plainargs (vl-arguments-plain->args x1.portargs) nil nil nil nil))
 
        ((unless (and (atom inouts)
                      (atom unknowns)))
@@ -126,7 +135,7 @@ that key, which lets us immediately see which modinsts have the same key.</p>
        ((when (member nil ins))
         ;; Blanks?  screw it, skip it.
         (vl-make-dupeinst-alist-aux (cdr x) alist))
-       (ins    (vl-exprlist-fix ins))
+       (ins    (vl-exprlist-strip ins))
        (key    (make-vl-dupeinst-key :modname x1.modname :inputs ins))
        (look   (hons-get key alist))
        (alist  (hons-acons key (cons x1 (cdr look)) alist)))
@@ -134,7 +143,6 @@ that key, which lets us immediately see which modinsts have the same key.</p>
 
 (define vl-make-dupeinst-alist ((x vl-modinstlist-p))
   :returns (alist vl-dupeinst-alistp :hyp :fguard)
-  :parents (dupeinst-check)
   :short "Builds a (slow) @(see vl-dupeinst-alistp) for a list of assignments."
 
   (b* ((alist (len x))
@@ -146,7 +154,6 @@ that key, which lets us immediately see which modinsts have the same key.</p>
 
 
 (defsection vl-dupeinst-trivial-p
-  :parents (dupeinst-check)
   :short "Customizable filter for duplicate module instances."
 
   :long "<p>By default, all duplicated modules are considered worth warning
@@ -177,11 +184,11 @@ filtered out into minor warnings.</p>
 
 (define vl-modinstlist-fixed-up-outs ((x vl-modinstlist-p))
   :parents (vl-maybe-warn-dupeinst)
-  :short "Extract the @(see vl-expr-fix)ed outputs from each module instance."
+  :short "Extract the @(see vl-expr-strip)ed outputs from each module instance."
   (b* (((when (atom x))
         nil)
        ((vl-modinst x1) (car x))
-       ((when (vl-arguments->namedp x1.portargs))
+       ((when (eq (vl-arguments-kind x1.portargs) :named))
         (raise "expected resolved args"))
        ((mv ?inputs outputs ?inouts ?unknowns)
         (vl-partition-plainargs (vl-arguments->args x1.portargs) nil nil nil nil))
@@ -190,7 +197,7 @@ filtered out into minor warnings.</p>
                            ;; Can't fix them up because there are blanks.
                            ;; Well, who cares.  We'll just leave them unfixed.
                            outexprs
-                         (vl-exprlist-fix outexprs))))
+                         (vl-exprlist-strip outexprs))))
     (cons fixed-outexprs
           (vl-modinstlist-fixed-up-outs (cdr x)))))
 
@@ -198,9 +205,7 @@ filtered out into minor warnings.</p>
   ((key      vl-dupeinst-key-p "The shared key for a group of modinsts.")
    (modinsts vl-modinstlist-p  "The modinsts that share this key.")
    (warnings vl-warninglist-p  "The @(see warnings) accumulator to extend."))
-  :returns (new-warnings vl-warninglist-p
-                         :hyp (force (vl-warninglist-p warnings)))
-  :parents (dupeinst-check)
+  :returns (new-warnings vl-warninglist-p)
   :short "Possibly add warnings about a group of module instances."
   :long "<p>Modinsts might not have multiple entries, in which case there is
 nothing to do and we just return @('warnings') unchanged.  Otherwise, we issue
@@ -209,7 +214,7 @@ a warning about the modules.</p>"
   (b* (((when (or (atom modinsts)
                   (atom (cdr modinsts))))
         ;; Nothing to do -- there isn't more than one assignment for this RHS.
-        warnings)
+        (ok))
 
        ;; BOZO maybe filter some of this stuff?
 
@@ -217,61 +222,48 @@ a warning about the modules.</p>"
        (dupes         (duplicated-members fixed-up-outs))
 
        (modname (vl-dupeinst-key->modname key))
-       (minor-p (vl-dupeinst-trivial-p modname))
-
-       (w (make-vl-warning
-           :type (if (consp dupes)
-                     (if minor-p :vl-warn-same-ports-minor :vl-warn-same-ports)
-                   (if minor-p :vl-warn-same-inputs-minor :vl-warn-same-inputs))
-           :msg "Found instances of the same module with ~s0:~%~%~s1"
-           :args (list (if (consp dupes)
-                           "the same arguments"
-                         "the same inputs (but different outputs)")
-                       (str::prefix-lines (with-local-ps
-                                           ;; may help avoid unnecessary line wrapping
-                                           (vl-ps-update-autowrap-col 200)
-                                           (vl-pp-modinstlist modinsts nil nil))
-                                          "     ")
-                       ;; These aren't printed, but we include them in the
-                       ;; warning so our suppression mechanism can be
-                       ;; applied.
-                       modinsts)
-           :fatalp nil
-           :fn 'vl-maybe-warn-dupeinst)))
-    (cons w warnings)))
-
+       (minor-p (vl-dupeinst-trivial-p modname)))
+    (warn :type (if (consp dupes)
+                    (if minor-p :vl-warn-same-ports-minor :vl-warn-same-ports)
+                  (if minor-p :vl-warn-same-inputs-minor :vl-warn-same-inputs))
+          :msg "Found instances of the same module with ~s0:~%~%~s1"
+          :args (list (if (consp dupes)
+                          "the same arguments"
+                        "the same inputs (but different outputs)")
+                      (str::prefix-lines (with-local-ps
+                                          ;; may help avoid unnecessary line wrapping
+                                          (vl-ps-update-autowrap-col 200)
+                                          (vl-pp-modinstlist modinsts nil nil))
+                                         "     ")
+                      ;; These aren't printed, but we include them in the
+                      ;; warning so our suppression mechanism can be
+                      ;; applied.
+                      modinsts))))
 
 (define vl-warnings-for-dupeinst-alist ((alist    vl-dupeinst-alistp)
                                         (warnings vl-warninglist-p))
-  :returns (new-warnings vl-warninglist-p
-                         :hyp (force (vl-warninglist-p warnings)))
-  :parents (dupeinst-check)
+  :returns (new-warnings vl-warninglist-p)
   (b* (((when (atom alist))
-        warnings)
+        (ok))
        (rhs      (caar alist))
        (assigns  (cdar alist))
        (warnings (vl-maybe-warn-dupeinst rhs assigns warnings)))
     (vl-warnings-for-dupeinst-alist (cdr alist) warnings)))
 
-
 (define vl-module-dupeinst-check ((x vl-module-p))
-  :parents (dupeinst-check)
   :returns (new-x vl-module-p :hyp :fguard)
   (b* (((vl-module x) x)
        (alist    (vl-make-dupeinst-alist x.modinsts))
        (warnings (vl-warnings-for-dupeinst-alist alist x.warnings)))
-    (change-vl-module x :warnings warnings))
-  ///
-  (defthm vl-module->name-of-vl-module-dupeinst-check
-    (equal (vl-module->name (vl-module-dupeinst-check x))
-           (vl-module->name x))))
+    (change-vl-module x :warnings warnings)))
 
 (defprojection vl-modulelist-dupeinst-check (x)
   (vl-module-dupeinst-check x)
   :guard (vl-modulelist-p x)
-  :result-type vl-modulelist-p
-  :parents (dupeinst-check)
-  :rest ((defthm vl-modulelist->names-of-vl-modulelist-dupeinst-check
-           (equal (vl-modulelist->names (vl-modulelist-dupeinst-check x))
-                  (vl-modulelist->names x)))))
+  :result-type vl-modulelist-p)
 
+(define vl-design-dupeinst-check ((x vl-design-p))
+  :returns (new-x vl-design-p)
+  (b* ((x (vl-design-fix x))
+       ((vl-design x) x))
+    (change-vl-design x :mods (vl-modulelist-dupeinst-check x.mods))))

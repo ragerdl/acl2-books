@@ -1,20 +1,30 @@
 ; VL Verilog Toolkit
-; Copyright (C) 2008-2011 Centaur Technology
+; Copyright (C) 2008-2014 Centaur Technology
 ;
 ; Contact:
 ;   Centaur Technology Formal Verification Group
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -22,7 +32,6 @@
 (include-book "../xf-resolve-ranges")
 (include-book "../../mlib/stmt-tools")
 (local (include-book "../../util/arithmetic"))
-
 
 (defxdoc stmtrewrite
   :parents (always-top)
@@ -71,21 +80,21 @@ expressions.</li>
  <li>unroll some repeat statements (up to a limit)</li>
  <li>eliminate @('always null;')</li>
  <li>eliminate @('initial null;')</li>
+ <li>eliminate @('for(...) null;')</li>
 </ul>
 
-<p>BOZO we should eventually implement additional rewrites, such as:</p>
+<p>Note that we don't transform case statements into if statement here, but
+that's done in @(see caseelim).</p>
 
-<ul>
- <li>case statements &rarr; if statements</li>
- <li>unroll simple while/for loops</li>
-</ul>")
+<p>Bozo eventually we should also unroll simple while/for loops.</p>")
+
+(local (xdoc::set-default-parents stmtrewrite))
 
 
 (define vl-waitstmt-rewrite ((condition vl-expr-p)
                              (body      vl-stmt-p)
                              (atts      vl-atts-p))
   :returns (stmt vl-stmt-p :hyp :fguard)
-  :parents (stmtrewrite)
   :short "Convert wait statements into empty while loops."
   :long "<p>The basic rewrite this performs is:</p>
 
@@ -118,7 +127,6 @@ valid?  What if the condition is X/Z?</p>"
 (define vl-foreverstmt-rewrite ((body vl-stmt-p)
                                 (atts vl-atts-p))
   :returns (stmt vl-stmt-p :hyp :fguard)
-  :parents (stmtrewrite)
   :short "Convert forever statements into while loops."
   :long "<p>The basic rewrite this performs is:</p>
 
@@ -150,7 +158,6 @@ implement.</p>"
                                (unroll-limit natp))
   :returns (mv (warnings vl-warninglist-p :hyp :fguard)
                (stmt     vl-stmt-p        :hyp :fguard))
-  :parents (stmtrewrite)
   :short "Unroll deterministic repeat statements."
   :long "<p>The basic rewrite this performs is:</p>
 
@@ -167,11 +174,11 @@ implement.</p>"
 
 <p>We only try to unroll when @('n') is easily resolved to a constant that is
 less than the @('unroll-limit').  In particular, we use @(see
-vl-rangeexpr-reduce) to try to evaluate the condition.  This lets us handle
+vl-constexpr-reduce) to try to evaluate the condition.  This lets us handle
 things like @('repeat(width-1) body') after @(see unparameterization) has
 occurred.</p>"
 
-  (b* ((count (vl-rangeexpr-reduce condition))
+  (b* ((count (vl-constexpr-reduce condition))
        ((when (and count (<= count unroll-limit)))
         (mv warnings
             ;; This works even when N is 0 or 1.  We expect our later block
@@ -197,7 +204,6 @@ occurred.</p>"
                                    (falsebranch vl-stmt-p)
                                    (atts        vl-atts-p))
   :returns (stmt vl-stmt-p :hyp :fguard)
-  :parents (stmtrewrite)
   :short "Eliminate pure-null if statements and merge simply nested ifs."
 
   :long "<p>There are probably other things we could do here.  For now, we
@@ -223,21 +229,21 @@ just carry out two simple rewrites:</p>
                                       :falsebranch falsebranch
                                       :atts atts))
 
-       ((when (and (vl-fast-nullstmt-p truebranch)
-                   (vl-fast-nullstmt-p falsebranch)))
+       ((when (and (vl-nullstmt-p truebranch)
+                   (vl-nullstmt-p falsebranch)))
         (make-vl-nullstmt))
 
        ((unless (vl-ifstmt-p truebranch))
         fail-to-apply)
 
        ;; Don't try to handle ifs with elses.
-       ((unless (vl-fast-nullstmt-p falsebranch))
+       ((unless (vl-nullstmt-p falsebranch))
         fail-to-apply)
 
        ((vl-ifstmt inner) truebranch)
 
        ;; Don't try to handle inner ifs with elses.
-       ((unless (vl-fast-nullstmt-p inner.falsebranch))
+       ((unless (vl-nullstmt-p inner.falsebranch))
         fail-to-apply)
 
        (new-condition (make-vl-nonatom :op :vl-binary-logand
@@ -250,27 +256,24 @@ just carry out two simple rewrites:</p>
 
 
 
-(define vl-stmtlist-all-null-p ((x vl-stmtlist-p))
-  :parents (stmtrewrite)
-  (if (atom x)
-      t
-    (and (vl-fast-nullstmt-p (car x))
-         (vl-stmtlist-all-null-p (cdr x)))))
+(define vl-caselist-all-null-p ((x vl-caselist-p))
+  (b* (((when (atom x))
+        t)
+       ((cons ?exprs stmt1) (first x)))
+    (and (vl-nullstmt-p stmt1)
+         (vl-caselist-all-null-p (rest x)))))
 
-
-(define vl-casestmt-rewrite ((casetype vl-casetype-p)
-                             (test    vl-expr-p)
-                             (exprs   vl-exprlist-p)
-                             (bodies  vl-stmtlist-p)
-                             (default vl-stmt-p)
-                             (atts    vl-atts-p))
-  :guard (same-lengthp exprs bodies)
+(define vl-casestmt-rewrite ((check    vl-casecheck-p)
+                             (casetype vl-casetype-p)
+                             (test     vl-expr-p)
+                             (caselist vl-caselist-p)
+                             (default  vl-stmt-p)
+                             (atts     vl-atts-p))
   :returns (stmt vl-stmt-p :hyp :fguard)
-  :parents (stmtrewrite)
   :short "Eliminate pure-null case statements."
   :long "<p>This is a pretty silly rewrite:</p>
 @({
-   case/casex/casez(expr):    -->   [null stmt]
+   [priority/unique/unique0/nil] [case/casex/casez](expr):    -->   [null stmt]
      expr1 : [null stmt];
      expr2 : [null stmt];
      ...
@@ -284,37 +287,68 @@ e.g., case-based @('$display') statements into nothing.  But if we implement a
 real case-statement &rarr; if-statement transform we shouldn't need this
 anymore.</p>"
 
-  (if (and (vl-fast-nullstmt-p default)
-           (vl-stmtlist-all-null-p bodies))
+  (if (and (vl-nullstmt-p default)
+           (vl-caselist-all-null-p caselist))
       ;; All statements are null, just turn into null.
       (make-vl-nullstmt)
     ;; Otherwise don't change it.  Eventually convert all case statements
     ;; into if statements?
-    (make-vl-casestmt :casetype casetype
+    (make-vl-casestmt :check check
+                      :casetype casetype
                       :test test
-                      :exprs exprs
-                      :bodies bodies
+                      :caselist caselist
                       :default default
                       :atts atts)))
 
 
 (define vl-remove-null-statements ((x vl-stmtlist-p))
   :returns (new-x vl-stmtlist-p :hyp :fguard)
-  :parents (stmtrewrite)
   (cond ((atom x)
          nil)
-        ((vl-fast-nullstmt-p (car x))
+        ((vl-nullstmt-p (car x))
          (vl-remove-null-statements (cdr x)))
         (t
          (cons (car x) (vl-remove-null-statements (cdr x))))))
+
+
+
+(defines vl-stmt-simple-count
+  (define vl-stmt-simple-count ((x vl-stmt-p))
+    :measure (vl-stmt-count x)
+    (if (vl-atomicstmt-p x)
+        1
+      (+ 1 (vl-stmtlist-simple-count (vl-compoundstmt->stmts x)))))
+  (define vl-stmtlist-simple-count ((x vl-stmtlist-p))
+    :measure (vl-stmtlist-count x)
+    (if (atom x)
+        0
+      (+ (vl-stmt-simple-count (car x))
+         (vl-stmtlist-simple-count (cdr x)))))
+  ///
+  (defthm vl-stmtlist-simple-count-of-cons
+    (equal (vl-stmtlist-simple-count (cons a x))
+           (+ (vl-stmt-simple-count a)
+              (vl-stmtlist-simple-count x))))
+  (defthm vl-stmtlist-simple-count-of-append
+    (equal (vl-stmtlist-simple-count (append x y))
+           (+ (vl-stmtlist-simple-count x)
+              (vl-stmtlist-simple-count y)))
+    :hints(("Goal" :induct (len x))))
+  (defthm vl-stmtlist-simple-count-when-vl-blockstmt-p
+    (implies (vl-blockstmt-p x)
+             (equal (vl-stmt-simple-count x)
+                    (+ 1 (vl-stmtlist-simple-count (vl-blockstmt->stmts x)))))
+    :hints(("Goal"
+            :in-theory (enable vl-atomicstmt-p vl-compoundstmt->stmts)
+            :expand (vl-stmt-simple-count x))))
+  (deffixequiv-mutual vl-stmt-simple-count))
 
 (define vl-flatten-blocks
   ((sequentialp booleanp "are we working with a sequential (begin/end) or
                           parallel (fork/join) block")
    (stmts       vl-stmtlist-p))
   :returns (new-stmts vl-stmtlist-p :hyp :fguard)
-  :measure (acl2-count stmts)
-  :parents (vl-blockstmt-rewrite)
+  :measure (vl-stmtlist-simple-count stmts)
   :short "Collapse nested @('begin/end') and @('fork/join') blocks."
   :long "<p>This function carries out rewrites such as:</p>
 
@@ -339,7 +373,8 @@ etc.</p>
 this, given the way that @(see vl-stmt-rewrite) works.  Well, it's probably
 just some useless computation if it's not necessary.</p>"
 
-  (b* (((when (atom stmts))
+  (b* ((stmts (vl-stmtlist-fix stmts))
+       ((when (atom stmts))
         nil)
 
        ((unless (and (vl-blockstmt-p (car stmts))
@@ -367,7 +402,6 @@ just some useless computation if it's not necessary.</p>"
                               (warnings    vl-warninglist-p))
   :returns (mv (warnings vl-warninglist-p :hyp :fguard)
                (stmt     vl-stmt-p        :hyp :fguard))
-  :parents (stmtrewrite)
   :short "Flatten sub-blocks, eliminate unnecessary blocks, and remove any null
 statements from a block."
 
@@ -428,10 +462,9 @@ blocks with names/decls seems tricky due to hierarchical identifiers.</p>"
 
 
 (define vl-$display-stmt-p ((x vl-stmt-p))
-  :parents (stmtrewrite)
   :short "Recognize a @('$display') statement."
   (declare (xargs :guard (vl-stmt-p x)))
-  (b* (((unless (vl-fast-enablestmt-p x))
+  (b* (((unless (vl-enablestmt-p x))
         nil)
        ((vl-enablestmt x) x)
        ((unless (vl-fast-atom-p x.id))
@@ -443,10 +476,9 @@ blocks with names/decls seems tricky due to hierarchical identifiers.</p>"
     (equal x.id.guts.name "$display")))
 
 (define vl-$vcover-stmt-p ((x vl-stmt-p))
-  :parents (stmtrewrite)
   :short "BOZO Centaur specific."
   (declare (xargs :guard (vl-stmt-p x)))
-  (b* (((unless (vl-fast-enablestmt-p x))
+  (b* (((unless (vl-enablestmt-p x))
         nil)
        ((vl-enablestmt x) x)
        ((unless (vl-fast-atom-p x.id))
@@ -458,137 +490,149 @@ blocks with names/decls seems tricky due to hierarchical identifiers.</p>"
     (equal x.id.guts.name "$vcover")))
 
 
-(defsection vl-stmt-rewrite
-  :parents (stmtrewrite)
+
+
+(define vl-forstmt-rewrite ((initlhs vl-expr-p)
+                            (initrhs vl-expr-p)
+                            (test    vl-expr-p)
+                            (nextlhs vl-expr-p)
+                            (nextrhs vl-expr-p)
+                            (body    vl-stmt-p)
+                            (atts    vl-atts-p)
+                            (warnings vl-warninglist-p))
+  :returns (mv (warnings vl-warninglist-p :hyp :fguard)
+               (stmt     vl-stmt-p        :hyp :fguard))
+  :short "Eliminate purely null @(see vl-forstmt)s."
+  :long "<p>The basic rewrite this performs is:</p>
+
+@({
+ for(initlhs = initrhs; test; nextlhs = nextrhs)
+    [null] ;
+   -->
+ [null];
+})
+
+<p>We could eventually unroll things.  This rewrite is generally meant to allow
+us to ignore for loops with @('$display') statements and similar.</p>"
+
+  (if (vl-nullstmt-p body)
+      (mv warnings body)
+    (mv warnings
+        (make-vl-forstmt :initlhs initlhs
+                         :initrhs initrhs
+                         :test test
+                         :nextlhs nextlhs
+                         :nextrhs nextrhs
+                         :body body
+                         :atts atts))))
+
+(defines vl-stmt-rewrite
   :short "Core statement rewriter."
 
-  (mutual-recursion
+  (define vl-stmt-rewrite ((x            vl-stmt-p)
+                           (unroll-limit natp)
+                           (warnings     vl-warninglist-p))
+    :returns (mv (warnings vl-warninglist-p)
+                 (new-x    vl-stmt-p))
+    :verify-guards nil
+    :measure (vl-stmt-count x)
+    (b* ((x            (vl-stmt-fix x))
+         (unroll-limit (lnfix unroll-limit))
+         (warnings     (vl-warninglist-fix warnings)))
+      (cond ((vl-atomicstmt-p x)
+             ;; Eliminate $display statements
+             (if (or (vl-$display-stmt-p x)
+                     (vl-$vcover-stmt-p x))
+                 (mv warnings (make-vl-nullstmt))
+               (mv warnings x)))
 
-   (defund vl-stmt-rewrite (x unroll-limit warnings)
-     "Returns (MV WARNINGS X-PRIME)"
-     (declare (xargs :guard (and (vl-stmt-p x)
-                                 (natp unroll-limit)
-                                 (vl-warninglist-p warnings))
-                     :hints(("Goal" :in-theory (disable (force))))
-                     :verify-guards nil
-                     :measure (two-nats-measure (acl2-count x) 1)))
-     (cond ((vl-fast-atomicstmt-p x)
-            ;; Eliminate $display statements
-            (if (or (vl-$display-stmt-p x)
-                    (vl-$vcover-stmt-p x))
-                (mv warnings (make-vl-nullstmt))
-              (mv warnings x)))
+            ((vl-waitstmt-p x)
+             (b* (((vl-waitstmt x) x)
+                  ((mv warnings body) (vl-stmt-rewrite x.body unroll-limit warnings))
+                  (x-prime            (vl-waitstmt-rewrite x.condition body x.atts)))
+               (mv warnings x-prime)))
 
-           ((not (mbt (consp x)))
-            (prog2$
-             (er hard 'vl-stmt-rewrite "Impossible case for termination.")
-             (mv warnings x)))
+            ((vl-foreverstmt-p x)
+             (b* (((vl-foreverstmt x) x)
+                  ((mv warnings body) (vl-stmt-rewrite x.body unroll-limit warnings))
+                  (x-prime            (vl-foreverstmt-rewrite body x.atts)))
+               (mv warnings x-prime)))
 
-           ((vl-waitstmt-p x)
-            (b* (((vl-waitstmt x) x)
-                 ((mv warnings body) (vl-stmt-rewrite x.body unroll-limit warnings))
-                 (x-prime            (vl-waitstmt-rewrite x.condition body x.atts)))
-              (mv warnings x-prime)))
+            ((vl-repeatstmt-p x)
+             (b* (((vl-repeatstmt x) x)
+                  ((mv warnings body)    (vl-stmt-rewrite x.body unroll-limit warnings))
+                  ((mv warnings x-prime) (vl-repeatstmt-rewrite x.condition body x.atts
+                                                                warnings unroll-limit)))
+               (mv warnings x-prime)))
 
-           ((vl-foreverstmt-p x)
-            (b* (((vl-foreverstmt x) x)
-                 ((mv warnings body) (vl-stmt-rewrite x.body unroll-limit warnings))
-                 (x-prime            (vl-foreverstmt-rewrite body x.atts)))
-              (mv warnings x-prime)))
+            ((vl-ifstmt-p x)
+             (b* (((vl-ifstmt x) x)
+                  ((mv warnings truebr)  (vl-stmt-rewrite x.truebranch unroll-limit warnings))
+                  ((mv warnings falsebr) (vl-stmt-rewrite x.falsebranch unroll-limit warnings))
+                  (x-prime               (vl-ifstmt-combine-rewrite x.condition truebr
+                                                                    falsebr x.atts)))
+               (mv warnings x-prime)))
 
-           ((vl-repeatstmt-p x)
-            (b* (((vl-repeatstmt x) x)
-                 ((mv warnings body)    (vl-stmt-rewrite x.body unroll-limit warnings))
-                 ((mv warnings x-prime) (vl-repeatstmt-rewrite x.condition body x.atts
-                                                               warnings unroll-limit)))
-              (mv warnings x-prime)))
+            ((vl-blockstmt-p x)
+             (b* (((vl-blockstmt x) x)
+                  ((mv warnings stmts)   (vl-stmtlist-rewrite x.stmts unroll-limit warnings))
+                  ((mv warnings x-prime) (vl-blockstmt-rewrite x.sequentialp x.name x.decls
+                                                               stmts x.atts warnings)))
+               (mv warnings x-prime)))
 
-           ((vl-ifstmt-p x)
-            (b* (((vl-ifstmt x) x)
-                 ((mv warnings truebr)  (vl-stmt-rewrite x.truebranch unroll-limit warnings))
-                 ((mv warnings falsebr) (vl-stmt-rewrite x.falsebranch unroll-limit warnings))
-                 (x-prime               (vl-ifstmt-combine-rewrite x.condition truebr
-                                                                   falsebr x.atts)))
-              (mv warnings x-prime)))
+            ((vl-casestmt-p x)
+             (b* (((vl-casestmt x) x)
+                  ((mv warnings caselist) (vl-caselist-rewrite x.caselist unroll-limit warnings))
+                  ((mv warnings default)  (vl-stmt-rewrite x.default unroll-limit warnings))
+                  (x-prime                (vl-casestmt-rewrite x.check x.casetype x.test caselist default x.atts)))
+               (mv warnings x-prime)))
 
-           ((vl-blockstmt-p x)
-            (b* (((vl-blockstmt x) x)
-                 ((mv warnings stmts)   (vl-stmtlist-rewrite x.stmts unroll-limit warnings))
-                 ((mv warnings x-prime) (vl-blockstmt-rewrite x.sequentialp x.name x.decls
-                                                              stmts x.atts warnings)))
-              (mv warnings x-prime)))
+            ((vl-forstmt-p x)
+             (b* (((vl-forstmt x) x)
+                  ((mv warnings body) (vl-stmt-rewrite x.body unroll-limit warnings))
+                  ((mv warnings new-x) (vl-forstmt-rewrite x.initlhs x.initrhs
+                                                           x.test
+                                                           x.nextlhs x.nextrhs
+                                                           body
+                                                           x.atts warnings)))
+               (mv warnings new-x)))
 
-           ((vl-casestmt-p x)
-            (b* (((vl-casestmt x) x)
-                 ((mv warnings bodies)  (vl-stmtlist-rewrite x.bodies unroll-limit warnings))
-                 ((mv warnings default) (vl-stmt-rewrite x.default unroll-limit warnings))
-                 (x-prime               (vl-casestmt-rewrite x.casetype x.test x.exprs
-                                                             bodies default x.atts)))
-              (mv warnings x-prime)))
+            (t
+             (b* ((stmts               (vl-compoundstmt->stmts x))
+                  ((mv warnings stmts) (vl-stmtlist-rewrite stmts unroll-limit warnings))
+                  (x-prime             (change-vl-compoundstmt x :stmts stmts)))
+               (mv warnings x-prime))))))
 
-           (t
-            (b* ((stmts               (vl-compoundstmt->stmts x))
-                 ((mv warnings stmts) (vl-stmtlist-rewrite stmts unroll-limit warnings))
-                 (x-prime             (change-vl-compoundstmt x :stmts stmts)))
-              (mv warnings x-prime)))))
+  (define vl-stmtlist-rewrite ((x            vl-stmtlist-p)
+                               (unroll-limit natp)
+                               (warnings     vl-warninglist-p))
+    :returns (mv (warnings vl-warninglist-p)
+                 (new-x    (and (vl-stmtlist-p new-x)
+                                (equal (len new-x) (len x)))))
+    :measure (vl-stmtlist-count x)
+    (b* (((when (atom x))
+          (mv (ok) nil))
+         ((mv warnings car-prime)
+          (vl-stmt-rewrite (car x) unroll-limit warnings))
+         ((mv warnings cdr-prime)
+          (vl-stmtlist-rewrite (cdr x) unroll-limit warnings)))
+      (mv warnings (cons car-prime cdr-prime))))
 
-   (defund vl-stmtlist-rewrite (x unroll-limit warnings)
-     "Returns (MV WARNINGS X-PRIME)"
-     (declare (xargs :guard (and (vl-stmtlist-p x)
-                                 (natp unroll-limit)
-                                 (vl-warninglist-p warnings))
-                     :measure (two-nats-measure (acl2-count x) 0)))
-     (b* (((when (atom x))
-           (mv warnings nil))
-          ((mv warnings car-prime)
-           (vl-stmt-rewrite (car x) unroll-limit warnings))
-          ((mv warnings cdr-prime)
-           (vl-stmtlist-rewrite (cdr x) unroll-limit warnings)))
-       (mv warnings (cons car-prime cdr-prime)))))
-
-  (flag::make-flag vl-flag-stmt-rewrite
-                   vl-stmt-rewrite
-                   :flag-mapping ((vl-stmt-rewrite . stmt)
-                                  (vl-stmtlist-rewrite . list)))
-
-  (local (defun my-induction (x unroll-limit warnings)
-           (if (atom x)
-               (mv warnings nil)
-             (b* (((mv warnings car-prime) (vl-stmt-rewrite (car x) unroll-limit warnings))
-                  ((mv warnings cdr-prime) (my-induction (cdr x) unroll-limit warnings)))
-               (mv warnings (cons car-prime cdr-prime))))))
-
-  (defthm len-of-vl-stmtlist-rewrite
-    (equal (len (mv-nth 1 (vl-stmtlist-rewrite x unroll-limit warnings)))
-           (len x))
-    :hints(("Goal"
-            :induct (my-induction x unroll-limit warnings)
-            :expand (vl-stmtlist-rewrite x unroll-limit warnings))))
-
-  (defthm-vl-flag-stmt-rewrite
-    (defthm return-type-of-vl-stmt-rewrite
-      (implies (and (force (vl-stmt-p x))
-                    (force (vl-warninglist-p warnings))
-                    (force (natp unroll-limit)))
-               (b* (((mv warnings new-x)
-                     (vl-stmt-rewrite x unroll-limit warnings)))
-                 (and (vl-warninglist-p warnings)
-                      (vl-stmt-p new-x))))
-      :flag stmt)
-    (defthm return-type-of-vl-stmtlist-rewrite
-      (implies (and (force (vl-stmtlist-p x))
-                    (force (vl-warninglist-p warnings))
-                    (force (natp unroll-limit)))
-               (b* (((mv warnings new-x)
-                     (vl-stmtlist-rewrite x unroll-limit warnings)))
-                 (and (vl-warninglist-p warnings)
-                      (vl-stmtlist-p new-x))))
-      :flag list)
-    :hints(("Goal"
-            :induct (vl-flag-stmt-rewrite flag x unroll-limit warnings)
-            :expand ((vl-stmt-rewrite x unroll-limit warnings)
-                     (vl-stmtlist-rewrite x unroll-limit warnings)))))
-
+  (define vl-caselist-rewrite ((x            vl-caselist-p)
+                               (unroll-limit natp)
+                               (warnings     vl-warninglist-p))
+    :returns (mv (warnings vl-warninglist-p)
+                 (new-x    vl-caselist-p))
+    :measure (vl-caselist-count x)
+    (b* ((x (vl-caselist-fix x))
+         ((when (atom x))
+          (mv (ok) nil))
+         ((cons expr1 stmt1) (car x))
+         ((mv warnings stmt1-prime) (vl-stmt-rewrite stmt1 unroll-limit warnings))
+         ((mv warnings rest-prime)  (vl-caselist-rewrite (cdr x) unroll-limit warnings)))
+      (mv warnings
+          (cons (cons expr1 stmt1-prime) rest-prime))))
+  ///
   (verify-guards vl-stmt-rewrite))
 
 
@@ -597,7 +641,6 @@ blocks with names/decls seems tricky due to hierarchical identifiers.</p>"
                              (warnings     vl-warninglist-p))
   :returns (mv (warnings vl-warninglist-p :hyp :fguard)
                (new-x    vl-stmt-p        :hyp :fguard))
-  :parents (stmtrewrite)
   :short "Wrapper for @(see vl-stmt-rewrite) that adds additional rewrites that
 are valid only for top-level statements."
 
@@ -623,7 +666,7 @@ have a whole @('always') or @('initial') block that does nothing more than
         (vl-stmt-rewrite x unroll-limit warnings))
 
        ((when (and (vl-timingstmt-p x)
-                   (vl-fast-nullstmt-p (vl-timingstmt->body x))))
+                   (vl-nullstmt-p (vl-timingstmt->body x))))
         (mv warnings (make-vl-nullstmt))))
 
     (mv warnings x)))
@@ -634,7 +677,6 @@ have a whole @('always') or @('initial') block that does nothing more than
                                (warnings     vl-warninglist-p))
   :returns (mv (warnings vl-warninglist-p :hyp :fguard)
                (new-x    vl-always-p      :hyp :fguard))
-  :parents (stmtrewrite)
   (b* (((mv warnings stmt)
         (vl-stmt-rewrite-top (vl-always->stmt x) unroll-limit warnings))
        (x-prime (change-vl-always x :stmt stmt)))
@@ -646,7 +688,6 @@ have a whole @('always') or @('initial') block that does nothing more than
                                    (warnings     vl-warninglist-p))
   :returns (mv (warnings vl-warninglist-p :hyp :fguard)
                (new-x    vl-alwayslist-p  :hyp :fguard))
-  :parents (stmtrewrite)
   (b* (((when (atom x))
         (mv warnings nil))
        ((mv warnings car-prime)
@@ -655,7 +696,7 @@ have a whole @('always') or @('initial') block that does nothing more than
         (vl-alwayslist-stmtrewrite (cdr x) unroll-limit warnings)))
     ;; Throw away "always [null];"
     (mv warnings
-        (if (vl-fast-nullstmt-p (vl-always->stmt car-prime))
+        (if (vl-nullstmt-p (vl-always->stmt car-prime))
             cdr-prime
           (cons car-prime cdr-prime)))))
 
@@ -665,7 +706,6 @@ have a whole @('always') or @('initial') block that does nothing more than
                                (warnings     vl-warninglist-p))
   :returns (mv (warnings vl-warninglist-p :hyp :fguard)
                (new-x    vl-initial-p     :hyp :fguard))
-  :parents (stmtrewrite)
   (b* (((mv warnings stmt)
         (vl-stmt-rewrite-top (vl-initial->stmt x) unroll-limit warnings))
        (x-prime (change-vl-initial x :stmt stmt)))
@@ -676,7 +716,6 @@ have a whole @('always') or @('initial') block that does nothing more than
                                     (warnings     vl-warninglist-p))
   :returns (mv (warnings vl-warninglist-p :hyp :fguard)
                (new-x    vl-initiallist-p  :hyp :fguard))
-  :parents (stmtrewrite)
   (b* (((when (atom x))
         (mv warnings nil))
        ((mv warnings car-prime)
@@ -685,14 +724,13 @@ have a whole @('always') or @('initial') block that does nothing more than
         (vl-initiallist-stmtrewrite (cdr x) unroll-limit warnings)))
     ;; Throw away "initial [null];"
     (mv warnings
-        (if (vl-fast-nullstmt-p (vl-initial->stmt car-prime))
+        (if (vl-nullstmt-p (vl-initial->stmt car-prime))
             cdr-prime
           (cons car-prime cdr-prime)))))
 
 (define vl-module-stmtrewrite ((x            vl-module-p)
                                (unroll-limit natp))
   :returns (new-x vl-module-p :hyp :fguard)
-  :parents (stmtrewrite)
   (b* (((vl-module x) x)
        ((when (vl-module->hands-offp x))
         x)
@@ -709,20 +747,22 @@ have a whole @('always') or @('initial') block that does nothing more than
     (change-vl-module x
                       :warnings warnings
                       :alwayses alwayses
-                      :initials initials))
-  ///
-  (defthm vl-module->name-of-vl-module-stmtrewrite
-    (equal (vl-module->name (vl-module-stmtrewrite x unroll-limit))
-           (vl-module->name x))))
-
+                      :initials initials)))
 
 (defprojection vl-modulelist-stmtrewrite (x unroll-limit)
   (vl-module-stmtrewrite x unroll-limit)
   :guard (and (vl-modulelist-p x)
               (natp unroll-limit))
-  :result-type vl-modulelist-p
-  :rest
-  ((defthm vl-modulelist->names-of-vl-modulelist-stmtrewrite
-     (equal (vl-modulelist->names (vl-modulelist-stmtrewrite x unroll-limit))
-            (vl-modulelist->names x)))))
+  :result-type vl-modulelist-p)
+
+(define vl-design-stmtrewrite
+  :short "Top-level @(see stmtrewrite) transform."
+  ((x            vl-design-p)
+   (unroll-limit natp))
+  :returns (new-x vl-design-p)
+  (b* ((x            (vl-design-fix x))
+       (unroll-limit (lnfix unroll-limit))
+       ((vl-design x) x)
+       (mods (vl-modulelist-stmtrewrite x.mods unroll-limit)))
+    (change-vl-design x :mods mods)))
 

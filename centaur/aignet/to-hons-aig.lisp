@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Sol Swords <sswords@centtech.com>
 
@@ -217,7 +227,23 @@
 
 
 
-
+(define aignet-trans-get-outs-aux ((n :type (integer 0 *))
+                                   aigtrans aignet
+                                   aig-acc)
+  :enabled t
+  :guard (and (<= (num-nodes aignet) (aigs-length aigtrans))
+              (<= n (num-outs aignet))
+              (true-listp aig-acc))
+  :measure (nfix (- (nfix (num-outs aignet))
+                    (nfix n)))
+  (b* (((when (mbe :logic (zp (- (num-outs aignet)
+                                 (nfix n)))
+                   :exec (int= n (num-outs aignet))))
+        (reverse aig-acc)))
+    (aignet-trans-get-outs-aux
+     (1+ (lnfix n)) aigtrans aignet
+     (cons (get-aig (outnum->id n aignet) aigtrans)
+           aig-acc))))
 
 (define aignet-trans-get-outs ((n :type (integer 0 *))
                                aigtrans aignet)
@@ -225,12 +251,23 @@
               (<= n (num-outs aignet)))
   :measure (nfix (- (nfix (num-outs aignet))
                     (nfix n)))
-  (b* (((when (mbe :logic (zp (- (num-outs aignet)
-                                 (nfix n)))
-                   :exec (int= n (num-outs aignet))))
-        nil))
-    (cons (get-aig (outnum->id n aignet) aigtrans)
-          (aignet-trans-get-outs (1+ (lnfix n)) aigtrans aignet))))
+  :verify-guards nil
+  (mbe :logic
+       (b* (((when (mbe :logic (zp (- (num-outs aignet)
+                                      (nfix n)))
+                        :exec (int= n (num-outs aignet))))
+             nil))
+         (cons (get-aig (outnum->id n aignet) aigtrans)
+               (aignet-trans-get-outs (1+ (lnfix n)) aigtrans aignet)))
+       :exec
+       (aignet-trans-get-outs-aux n aigtrans aignet nil))
+  ///
+  (defthm aignet-trans-get-outs-aux-elim
+    (implies (true-listp aig-acc)
+             (equal (aignet-trans-get-outs-aux n aigtrans aignet aig-acc)
+                    (revappend aig-acc
+                               (aignet-trans-get-outs n aigtrans aignet)))))
+  (verify-guards aignet-trans-get-outs))
 
 (define aignet-trans-get-nxsts ((n :type (integer 0 *))
                                 aigtrans aignet)

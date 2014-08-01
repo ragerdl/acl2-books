@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -40,14 +50,6 @@
 (include-book "relnotes")
 (include-book "practices")
 
-(local
-
-; The TOP topic will be the first thing the user sees when they open the
-; manual!  We localize this because you may want to write your own top topics
-; for custom manuals.
-
- (include-book "top-topic"))
-
 (include-book "xdoc/save" :dir :system)
 
 (include-book "build/doc" :dir :system)
@@ -65,6 +67,11 @@
 (include-book "centaur/aignet/types" :dir :system)
 (include-book "centaur/aignet/vecsim" :dir :system)
 
+; The rest of ihs is included elsewhere transitively.
+; We load logops-lemmas first so that the old style :doc-strings don't get
+; stripped away when they're loaded redundantly later.
+(include-book "ihs/logops-lemmas" :dir :system)
+
 (include-book "centaur/bitops/top" :dir :system)
 (include-book "centaur/bitops/congruences" :dir :system)
 (include-book "centaur/bitops/defaults" :dir :system)
@@ -72,6 +79,7 @@
 (include-book "centaur/bridge/top" :dir :system)
 
 (include-book "centaur/clex/example" :dir :system)
+(include-book "centaur/nrev/demo" :dir :system)
 
 (include-book "cgen/top" :dir :system)
 
@@ -91,6 +99,7 @@
 (include-book "centaur/gl/gl-ttags" :dir :system)
 (include-book "centaur/gl/gobject-type-thms" :dir :system)
 (include-book "centaur/gl/bfr-satlink" :dir :system)
+(include-book "centaur/gl/def-gl-rule" :dir :system)
 
 (include-book "centaur/satlink/top" :dir :system)
 (include-book "centaur/satlink/check-config" :dir :system)
@@ -103,6 +112,7 @@
 (include-book "centaur/misc/load-stobj" :dir :system)
 (include-book "centaur/misc/load-stobj-tests" :dir :system)
 (include-book "centaur/misc/count-up" :dir :system)
+(include-book "centaur/misc/fast-alist-pop" :dir :system)
 
 ;; BOZO conflicts with something in 4v-sexpr?
 
@@ -116,11 +126,18 @@
 (include-book "regex/regex-ui" :dir :system)
 
 (include-book "std/top" :dir :system)
+(include-book "std/basic/inductions" :dir :system)
 (include-book "std/io/unsound-read" :dir :system)
 (include-book "std/bitsets/top" :dir :system)
 
 (include-book "std/strings/top" :dir :system)
 (include-book "std/strings/base64" :dir :system)
+(include-book "std/strings/pretty" :dir :system)
+
+; Note, 7/28/2014: if we include
+; (include-book "std/system/top" :dir :system)
+; instead of the following, we get a name conflict.
+(include-book "std/system/non-parallel-book" :dir :system)
 
 (include-book "centaur/ubdds/lite" :dir :system)
 (include-book "centaur/ubdds/param" :dir :system)
@@ -148,18 +165,17 @@
 (include-book "centaur/vl/util/prefix-hash" :dir :system)
 ;;(include-book "vl/util/prefixp")
 
-(include-book "centaur/vl/checkers/use-set-tool" :dir :system)
-
-;; BOZO uh, incompatible with lint?  is this dead?
-;; (include-book "vl/lint/xf-drop-unresolved-submodules")
-(include-book "centaur/vl/mlib/lvalues-mentioning" :dir :system)
-(include-book "centaur/vl/mlib/rvalues" :dir :system)
 ;; (include-book "vl/mlib/ram-tools")   obsolete
 
 
 (include-book "hacking/all" :dir :system)
 (include-book "hints/consider-hint" :dir :system)
 (include-book "tools/do-not" :dir :system)
+(include-book "tools/plev" :dir :system)
+(include-book "tools/plev-ccl" :dir :system)
+(include-book "tools/with-supporters" :dir :system)
+(include-book "tools/remove-hyps" :dir :system)
+(include-book "clause-processors/doc" :dir :system)
 
 ; [Jared] removing these to speed up the manual build
 ;(include-book "tutorial/intro")
@@ -181,6 +197,8 @@
 (include-book "rtl/rel9/lib/add" :dir :system)
 (include-book "rtl/rel9/lib/mult" :dir :system)
 
+(include-book "centaur/fty/deftypes" :dir :system)
+
 #||
 
 ;; This is a nice place to put include-book scanner hacks that trick cert.pl
@@ -193,14 +211,8 @@
 (include-book "xdoc/tests/preprocessor-tests" :dir :system)
 (include-book "xdoc/tests/unsound-eval-tests" :dir :system)
 (include-book "xdoc/tests/defsection-tests" :dir :system)
-
 (include-book "centaur/defrstobj/basic-tests" :dir :system)
-(include-book "std/util/deflist-tests" :dir :system)
-(include-book "std/util/defalist-tests" :dir :system)
-(include-book "std/util/defmapappend-tests" :dir :system)
-(include-book "std/util/defprojection-tests" :dir :system)
-(include-book "std/util/defredundant-tests" :dir :system)
-(include-book "std/util/defval-tests" :dir :system)
+(include-book "std/util/tests/top" :dir :system)
 (include-book "std/util/extensions/assert-return-thms" :dir :system)
 (include-book "centaur/misc/tshell-tests" :dir :system)
 (include-book "oslib/tests/top" :dir :system)
@@ -349,28 +361,7 @@ of proofs.")
 (xdoc::import-acl2doc)
 
 (include-book "xdoc/topics" :dir :system)
-
-#!XDOC
-(defun change-parents-fn (name new-parents all-topics)
-  (declare (xargs :mode :program))
-  (b* (((when (atom all-topics))
-        (er hard? 'change-parents-fn "Topic ~x0 was not found." name))
-       (topic (car all-topics))
-       ((unless (equal (cdr (assoc :name topic)) name))
-        (cons (car all-topics)
-              (change-parents-fn name new-parents (cdr all-topics))))
-       (- (cw "; Note: changing parents of ~x0 from ~x1 to ~x2.~%"
-              name (cdr (assoc :parents topic)) new-parents))
-       (topic (cons (cons :parents new-parents)
-                    (delete-assoc-equal :parents topic))))
-    (cons topic (cdr all-topics))))
-
-#!XDOC
-(defmacro change-parents (name new-parents)
-  `(table xdoc 'doc
-          (change-parents-fn ',name ',new-parents
-                             (get-xdoc-table world))))
-
+(include-book "xdoc/alter" :dir :system)
 
 
 ; These are legacy defdoc topics that need to be incorporated into the
@@ -378,15 +369,14 @@ of proofs.")
 ; we'll do them globally, so they'll be included, e.g., in the Emacs version of
 ; the combined manual.
 (xdoc::change-parents ihs (arithmetic))
-(xdoc::change-parents b* (macro-libraries))
-(xdoc::change-parents data-definitions (macro-libraries))
+(xdoc::change-parents data-definitions (macro-libraries projects debugging))
+(xdoc::change-parents with-timeout (data-definitions))
 (xdoc::change-parents data-structures (macro-libraries))
 (xdoc::change-parents hacker (interfacing-tools))
 (xdoc::change-parents witness-cp (proof-automation))
-(xdoc::change-parents esim (hardware-verification))
 (xdoc::change-parents testing (debugging))
 
-(xdoc::change-parents leftist-trees (projects/leftist-trees))
+(xdoc::change-parents leftist-trees (projects))
 (xdoc::change-parents ltree-sort (leftist-trees))
 (xdoc::change-parents how-many-lt (leftist-trees))
 
@@ -441,6 +431,15 @@ of proofs.")
 
      ))
 
+(local
+
+; The TOP topic will be the first thing the user sees when they open the
+; manual!  We localize this because you may want to write your own top topics
+; for custom manuals.
+
+ (include-book "top-topic"))
+
+
 (comp t)
 
 (local (xdoc::fix-the-hierarchy))
@@ -452,6 +451,10 @@ of proofs.")
                               :verbosep t)))
    (value '(value-triple "xdoc.sao"))))
 
+(value-triple
+ (progn$ (cw "--- Writing ACL2+Books Manual ----------------------------------~%")
+         :invisible))
+
 (make-event
 ; xdoc::save is an event, so we might have just called it directly.  But for
 ; reasons Jared doesn't understand this is screwing up the extended manual we
@@ -462,10 +465,73 @@ of proofs.")
                        :import nil
                        ;; Allow redefinition so that we don't have to get
                        ;; everything perfect (until it's release time)
-                       :redef-okp t
-                       ;; For classic mode only...
-                       :expand-level 2)
+                       :redef-okp t)
            (value `(value-triple :manual))))
+
+(value-triple
+ (progn$ (cw "--- Done Writing ACL2+Books Manual -----------------------------~%")
+         :invisible))
+
+
+
+; Support for the Emacs-based Manual
+;
+; Historically this was part of system/doc/render-doc-combined.lisp.  However,
+; that file ended up being quite expensive and in the critical path.  Most of
+; the expense was that it just had to include-book doc/top.lisp, which takes
+; a lot of time because of how many books are included.
+;
+; So now, instead, to improve performance, we just merge the export of the
+; text-based manual into doc/top.lisp.
+
+(include-book "system/doc/render-doc-base" :dir :system)
+
+(defttag :open-output-channel!)
+
+#!XDOC
+(acl2::defconsts
+ (& & state)
+ (state-global-let*
+  ((current-package "ACL2" set-current-package-state))
+  (b* ((all-topics (force-root-parents
+                    (maybe-add-top-topic
+                     (normalize-parents-list ; Should we clean-topics?
+                      (get-xdoc-table (w state))))))
+       ((mv rendered state)
+        (render-topics all-topics all-topics state))
+       (rendered (split-acl2-topics rendered nil nil nil))
+       (outfile (acl2::extend-pathname (cbd)
+                                       "../system/doc/rendered-doc-combined.lsp"
+                                       state))
+       (- (cw "Writing ~s0~%" outfile))
+       ((mv channel state) (open-output-channel! outfile :character state))
+       ((unless channel)
+        (cw "can't open ~s0 for output." outfile)
+        (acl2::silent-error state))
+       (state (princ$ "; Documentation for acl2+books
+; WARNING: GENERATED FILE, DO NOT HAND EDIT!
+; The contents of this file are derived from the full acl2+books
+; documentation.  For license and copyright information, see community book
+; xdoc/fancy/LICENSE.
+
+; This program is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+; LICENSE for more details.
+
+(in-package \"ACL2\")
+
+(defconst *acl2+books-documentation* '"
+                      channel state))
+       (state (fms! "~x0"
+                    (list (cons #\0 rendered))
+                    channel state nil))
+       (state (fms! ")" nil channel state nil))
+       (state (newline channel state))
+       (state (close-output-channel channel state)))
+      (value nil))))
+
+
 
 (local
  (defmacro doc-rebuild ()
@@ -502,3 +568,42 @@ of proofs.")
                  :expand-level 2)
      (value `(value-triple :manual)))))
 
+
+
+
+
+#|| 
+
+(redef-errors (get-xdoc-table (w state)))
+
+(defun collect-topics-with-name (name topics)
+  (if (atom topics)
+      nil
+    (if (equal (cdr (assoc :name (car topics))) name)
+        (cons (Car topics) (collect-topics-with-name name (Cdr topics)))
+      (collect-topics-with-name name (Cdr topics)))))
+
+(b* (((list a b) (collect-topics-with-name 'oslib::lisp-type (get-xdoc-table (w state)))))
+  (equal a b))
+
+(b* (((list a b) (collect-topics-with-name 'acl2::ADD-LISTFIX-RULE (get-xdoc-table (w state)))))
+  (equal a b))
+
+
+
+(defun map-topic-names (x)
+  (if (atom x)
+      nil
+    (cons (cdr (assoc :name (car x)))
+          (map-topic-names (cdr x)))))
+
+(map-topic-names (get-xdoc-table (w state)))
+
+
+(b* (((list a b) (collect-topics-with-name 'oslib::lisp-type (get-xdoc-table (w state)))))
+  (equal a b))
+
+
+
+(collect-topics-with-name 'acl2::add-listfix-rule (get-xdoc-table (w state)))
+||#

@@ -8,15 +8,25 @@
 #   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 #   http://www.centtech.com/
 #
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation; either version 2 of the License, or (at your option) any later
-# version.  This program is distributed in the hope that it will be useful but
-# WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-# more details.  You should have received a copy of the GNU General Public
-# License along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+# License: (An MIT/X11-style license)
+#
+#   Permission is hereby granted, free of charge, to any person obtaining a
+#   copy of this software and associated documentation files (the "Software"),
+#   to deal in the Software without restriction, including without limitation
+#   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+#   and/or sell copies of the Software, and to permit persons to whom the
+#   Software is furnished to do so, subject to the following conditions:
+#
+#   The above copyright notice and this permission notice shall be included in
+#   all copies or substantial portions of the Software.
+#
+#   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+#   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+#   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+#   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+#   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+#   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+#   DEALINGS IN THE SOFTWARE.
 #
 # For authorship information, see "Credits and History" below.
 
@@ -66,6 +76,8 @@
 #   special       Includes all the books, allowing arbitrary code before and
 #                 after an include-book, and writing the log for each book
 #                 <bk>.lisp to the file <bk>.special.out.
+#
+#   TAGS          Makes a tag database for emacs including all the book sources.
 #
 # Basic Options:
 #
@@ -160,13 +172,21 @@ endif # HTTP_PROXY_WITH_PORT
 
 QUICKLISP_DIR := centaur/quicklisp
 
-ifneq ($(USE_QUICKLISP), )
+.PHONY: quicklisp
+
+ifeq ($(USE_QUICKLISP), )
+
+quicklisp:
+	$(MAKE) USE_QUICKLISP=1 $(QUICKLISP_DIR)/top.cert
+
+else
 
 $(QUICKLISP_DIR)/quicklisp.lsp:
 	@echo "Downloading Quicklisp"
 	@cd $(QUICKLISP_DIR); \
 	   curl http://beta.quicklisp.org/quicklisp.lisp \
              -o quicklisp.lsp $(HTTP_PROXY_FLAG)
+	@$(BUILD_DIR)/wait.pl $(QUICKLISP_DIR)/quicklisp.lsp
 	@ls -l $(QUICKLISP_DIR)/quicklisp.lsp
 
 $(QUICKLISP_DIR)/inst/setup.lisp: $(QUICKLISP_DIR)/quicklisp.lsp \
@@ -175,12 +195,12 @@ $(QUICKLISP_DIR)/inst/setup.lisp: $(QUICKLISP_DIR)/quicklisp.lsp \
 	@cd $(QUICKLISP_DIR); \
            ($(STARTJOB) -c \
               "ACL2_CUSTOMIZATION=NONE $(ACL2) < install.lsp &> install.out" ; \
+	    $(BUILD_DIR)/wait.pl inst/setup.lisp ;\
 	    ls -l inst/setup.lisp) \
 	   || (tail -300 install.out | sed 's/^/   | /'; false)
 
 $(QUICKLISP_DIR)/base.cert: $(QUICKLISP_DIR)/inst/setup.lisp
 
-.PHONY: quicklisp
 quicklisp: $(QUICKLISP_DIR)/top.cert
 
 # I don't think we need this now
@@ -267,6 +287,8 @@ REBUILD_MAKEFILE_DEPS := $(shell \
           --cache $(BUILD_DIR)/Makefile-cache \
           --acl2-books `pwd` \
           --targets $(BUILD_DIR)/Makefile-books \
+          --write-sources $(BUILD_DIR)/Makefile-sources \
+          --write-certs $(BUILD_DIR)/Makefile-certs \
           1>&2) ;\
   echo 'MFDEPS_DEBUG := $$(shell echo Reading book deps ' \
        'Makefile-deps created on' `date` '1>&2)' \
@@ -936,7 +958,11 @@ all: $(OK_CERTS)
 # be necessary, because at one point doc/top.cert was not
 # otherwise made (something related to glucose).
 everything:
+ifeq ($(ACL2_HAS_HONS), )
+	$(MAKE) all $(ADDED_BOOKS)
+else
 	$(MAKE) all USE_QUICKLISP=1 $(ADDED_BOOKS) doc/top.cert
+endif # ifeq ($(ACL2_HAS_HONS), )
 
 # The critical path report will work only if you have set up certificate timing
 # BEFORE you build the books.  See ./critpath.pl --help for details.
@@ -944,14 +970,14 @@ everything:
 # BOZO I probably broke this, we shouldn't use --targets, we should use ok_certs...
 critpath.txt: $(OK_CERTS)
 	echo "Building critpath.txt..."
-	time $(BUILD_DIR)/critpath.pl -m 2 --targets Makefile-books > critpath.txt
+	time $(BUILD_DIR)/critpath.pl -m 2 --targets $(BUILD_DIR)/Makefile-books > critpath.txt
 
 
 # Targets for building whole directories of books.
 
 # basic is the default set of books to build:
 .PHONY: basic
-basic: arithmetic arithmetic-2 arithmetic-3 arithmetic-5 ihs std str xdoc tools misc data-structures
+basic: arithmetic arithmetic-2 arithmetic-3 arithmetic-5 ihs std xdoc tools misc data-structures
 
 
 .PHONY: add-ons
@@ -1077,7 +1103,7 @@ xdoc: $(filter-out xdoc/tests/%, $(filter xdoc/%, $(OK_CERTS)))
 .PHONY: workshops \
         workshop1999 workshop2000 workshop2001 workshop2002 \
         workshop2003 workshop2004 workshop2006 workshop2007 \
-        workshop2009 workshop2011 workshop2013
+        workshop2009 workshop2011 workshop2013 workshop2014
 
 workshops: $(filter workshops/%, $(OK_CERTS))
 workshop1999: $(filter workshops/1999/%, $(OK_CERTS))
@@ -1091,7 +1117,7 @@ workshop2007: $(filter workshops/2007/%, $(OK_CERTS))
 workshop2009: $(filter workshops/2009/%, $(OK_CERTS))
 workshop2011: $(filter workshops/2011/%, $(OK_CERTS))
 workshop2013: $(filter workshops/2013/%, $(OK_CERTS))
-
+workshop2014: $(filter workshops/2014/%, $(OK_CERTS))
 
 
 # Projects targets:
@@ -1279,7 +1305,7 @@ manual:
 # following command in this directory, where acl2h is an ACL2(h)
 # executable.
 
-#   make system/doc/render-doc-combined.cert USE_QUICKLISP=1 ACL2=acl2h
+#   make doc/top.cert USE_QUICKLISP=1 ACL2=acl2h
 
 ##############################
 ### Section: Some notes
@@ -1344,6 +1370,43 @@ clean_vl:
 	@rm -f centaur/vl/bin/*
 
 clean: clean_vl
+
+
+
+# Getopt Demo
+
+centaur/getopt/demo2: centaur/getopt/demo2.cert
+	@echo "Making getopt demo executable"
+	@cd centaur/getopt; \
+	 ACL2_CUSTOMIZATION=NONE $(STARTJOB) -c "$(ACL2) < demo2-save.lsp &> demo2-save.out"
+	@ls -l centaur/getopt/demo2
+
+centaur/getopt/demo2-test.ok: centaur/getopt/demo2 \
+                              centaur/getopt/demo2-test.pl
+	@echo "Testing getopt demo executable"
+	@cd centaur/getopt; \
+         $(STARTJOB) -c "./demo2-test.pl &> demo2-test.out"
+	@cd centaur/getopt; cp demo2-test.out demo2-test.ok
+	@ls -l centaur/getopt/demo2-test.ok
+
+all: centaur/getopt/demo2-test.ok
+
+##############################
+### Section: Tags
+##############################
+
+# These regular expressions may include things more appropriate for
+# raw Lisp.  May want to remove some of these or extend them to
+# support new types of definitions.
+ETAGS = etags --language=none \
+ --ignore-case-regex='/ *set[ \t]?\([^ =]*\)[ \n]*=/\1/' \
+ --ignore-case-regex='/(set[^ \t]*[ \t]?\([^ ]*\)[ \t]*/\2/' \
+ --ignore-case-regex='/ *(\(memoize\|def[^tc]\|defttag\|deftheory\)[^ \t]*[ \t]?\([^ ]*\)[ \t]*/\2/'
+
+TAGS : $(CERT_PL_SOURCES)
+	@echo "Making TAGS"
+	@rm -f TAGS
+	cat $(BUILD_DIR)/Makefile-sources | xargs -n 100 --delimiter='\n' $(ETAGS) -a
 
 
 
@@ -1496,3 +1559,4 @@ clean: clean_vl
 # cert-flags instead of certify-book commands.  Alternately, maybe the scheme
 # should be something like: if you give a certify-book command, we use it;
 # otherwise we generate one using the cert-flags.
+

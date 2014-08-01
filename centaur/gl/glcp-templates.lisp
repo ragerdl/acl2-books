@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Sol Swords <sswords@centtech.com>
 
@@ -64,11 +74,32 @@
   `(mv ,@(make-list-ac nvals nil nil)
       ,msg ,@(cdr *glcp-common-retvals*)))
 
+(defund glcp-interp-sanitize-error (err)
+  (declare (xargs :guard t))
+  (if (eq err :unreachable)
+      "Unreachable error from a strange source"
+    err))
+
+(defthm glcp-interp-sanitize-under-iff
+  (iff (glcp-interp-sanitize-error err)
+       err)
+  :hints(("Goal" :in-theory (enable glcp-interp-sanitize-error))))
+
+(defthm glcp-interp-sanitize-not-unreachable
+  (not (equal (glcp-interp-sanitize-error err) :unreachable))
+  :hints(("Goal" :in-theory (enable glcp-interp-sanitize-error))))
+
 (defmacro glcp-interp-error (msg &key (nvals '1))
   (declare (xargs :guard t))
-  `(progn$ (glcp-interp-error-trace ,msg)
-           (glcp-interp-abort ,msg :nvals ,nvals)))
+  `(let ((msg (glcp-interp-sanitize-error ,msg)))
+     (progn$ (glcp-interp-error-trace msg)
+             (glcp-interp-abort msg :nvals ,nvals))))
 
+(defmacro patbind-glcp-special (args bindings expr)
+  ;; error flag is first arg, rest are regular returns
+  `(b* (((mv ,@(cdr args) ,(car args) ,@(cdr *glcp-common-retvals*))
+         ,(car bindings)))
+     ,expr))
 
 (defmacro patbind-glcp-er (args bindings expr)
   (b* ((nvalsp (member :nvals args))
@@ -81,17 +112,59 @@
        (check-vars-not-free
         (patbind-glcp-er-error) ,expr))))
 
-(defmacro patbind-glcp-er-unassume (args bindings expr)
-  (b* ((nvalsp (member :nvals args))
-       (nvals (or (cadr nvalsp) 1))
-       (args (take (- (len args) (len nvalsp)) args)))
-    `(b* (((mv ,@args patbind-glcp-er-error ,@(cdr *glcp-common-retvals*))
-           ,(car bindings))
-          (pathcond (bfr-unassume pathcond undo))
-          ((when patbind-glcp-er-error)
-           (glcp-interp-abort patbind-glcp-er-error :nvals ,nvals)))
-       (check-vars-not-free
-        (patbind-glcp-er-error) ,expr))))
+(defmacro glcp-run-branch (branchcond expr)
+  ;; This assumes branchcond, then runs expr, a glcp-interp with 1 return
+  ;; value.  Before propagating the error we unassume the latest pathcond
+  ;; assumption.  If there is a non-:unreachable error, we propagate it.
+  ;; Otherwise, we return two values: a flag saying whether there was an
+  ;; :unreachable error, and the value returned by the expression.
+  `(b* ((branchcond (bfr-constr-fix ,branchcond (is-constraint interp-st)))
+        ((mv contra pathcond undo)
+         (bfr-assume branchcond pathcond))
+        ((when contra)
+         (b* ((pathcond (bfr-unassume pathcond undo)))
+           (glcp-value t nil)))
+        ((glcp-special err retval) ,expr)
+        (pathcond (bfr-unassume pathcond undo))
+        ((when err)
+         (if (eq err :unreachable)
+             (glcp-value t nil)
+           (glcp-interp-abort err :nvals 2))))
+     (glcp-value nil retval)))
+
+;; (defmacro patbind-glcp-er-unassume (args bindings expr)
+;;   ;; Note: This propagates errors after unassuming the latest pathcond update
+;;   ;; but it also converts :unreachable errors into :branch-unreachable ones.
+;;   (b* ((nvalsp (member :nvals args))
+;;        (nvals (or (cadr nvalsp) 1))
+;;        (args (take (- (len args) (len nvalsp)) args)))
+;;     `(b* (((mv ,@args patbind-glcp-er-error ,@(cdr *glcp-common-retvals*))
+;;            ,(car bindings))
+;;           (pathcond (bfr-unassume pathcond undo))
+;;           ((when patbind-glcp-er-error)
+;;            (glcp-interp-abort (if (eq patbind-glcp-er-error :unreachable)
+;;                                   :branch-unreachable
+;;                                 patbind-glcp-er-error)
+;;                               :nvals ,nvals)))
+;;        (check-vars-not-free
+;;         (patbind-glcp-er-error) ,expr))))
+
+(defund glcp-non-branch-err-p (err)
+  (declare (xargs :guard t))
+  (and err (not (eq err :branch-unreachable))))
+
+;; (defmacro patbind-glcp-catch-branch (args bindings expr)
+;;   ;; first arg is variable to bind branch-unreachable flag to
+;;   (b* ((nvalsp (member :nvals args))
+;;        (nvals (or (cadr nvalsp) 1))
+;;        (args (take (- (len args) (len nvalsp)) args)))
+;;     `(b* (((mv ,@(cdr args) patbind-glcp-er-error ,@(cdr *glcp-common-retvals*))
+;;            ,(car bindings))
+;;           ((when (glcp-non-branch-err-p patbind-glcp-er-error))
+;;            (glcp-interp-abort patbind-glcp-er-error :nvals ,nvals))
+;;           (,(car args) (eq patbind-glcp-er-error :branch-unreachable)))
+;;        (check-vars-not-free
+;;         (patbind-glcp-er-error) ,expr))))
 
 (defmacro cpathcond ()
   '(bfr-and (bfr-hyp->bfr pathcond)
@@ -231,7 +304,7 @@
               (let ((test (car (cdr x)))
                     (tbr (car (cdr (cdr x))))
                     (fbr (car (cdr (cdr (cdr x))))))
-                (interp-if/or test tbr fbr alist contexts . ,*glcp-common-inputs*)))
+                (interp-if/or test tbr fbr x alist contexts . ,*glcp-common-inputs*)))
 
              ((when (eq (car x) 'gl-aside))
               (if (eql (len x) 2)
@@ -306,13 +379,18 @@
               (interp-fncall fn actuals x contexts . ,*glcp-common-inputs*))
              ((glcp-er test-bfr)
               (simplify-if-test test t . ,*glcp-common-inputs*))
-             ((glcp-er then-obj)
+             ((glcp-er then-unreach then-obj)
               (maybe-interp-fncall-ifs fn then-args x contexts test-bfr
                                        . ,*glcp-common-inputs*))
-             ((glcp-er else-obj)
+             ((glcp-er else-unreach else-obj)
               (maybe-interp-fncall-ifs fn else-args x contexts (bfr-not test-bfr)
-                                       . ,*glcp-common-inputs*)))
-          (merge-branches test-bfr then-obj else-obj nil contexts . ,*glcp-common-inputs*)))
+                                       . ,*glcp-common-inputs*))
+             ((when then-unreach)
+              (if else-unreach
+                  (glcp-interp-abort :unreachable)
+                (glcp-value else-obj)))
+             ((when else-unreach) (glcp-value then-obj)))
+          (merge-branches test-bfr then-obj else-obj x nil contexts . ,*glcp-common-inputs*)))
 
 
       (defun maybe-interp-fncall-ifs (fn actuals x contexts branchcond . ,*glcp-common-inputs*)
@@ -326,17 +404,10 @@
                               (true-listp actuals)
                               . ,*glcp-common-guards*)
                   :stobjs ,*glcp-stobjs*))
-        (b* ((branchcond (bfr-constr-fix branchcond
-                                         (is-constraint
-                                          interp-st)))
-             ((mv contra pathcond undo)
-              (bfr-assume branchcond pathcond))
-             ((glcp-er-unassume result)
-              (if contra
-                  (glcp-value nil)
-                (interp-fncall-ifs
-                 fn actuals x contexts . ,*glcp-common-inputs*))))
-          (glcp-value result)))
+        (glcp-run-branch
+         branchcond
+         (interp-fncall-ifs
+          fn actuals x contexts . ,*glcp-common-inputs*)))
 
       (defun interp-fncall
         (fn actuals x contexts . ,*glcp-common-inputs*)
@@ -354,7 +425,8 @@
                                                   'gl-uninterpreted-functions (w
                                                                                state)))))
              ((mv fncall-failed ans)
-              (if (and (not uninterp)
+              (if (and (or (not uninterp)
+                           (eq uninterp :concrete-only))
                        (general-concrete-listp actuals))
                   (acl2::magic-ev-fncall fn (general-concrete-obj-list actuals)
                                          state t nil)
@@ -391,7 +463,7 @@ but its arity is ~x3.  Its formal parameters are ~x4."
           (interp-term-equivs body (pairlis$ formals actuals)
                               contexts . ,*glcp-common-inputs*)))
 
-      (defun interp-if/or (test tbr fbr alist contexts . ,*glcp-common-inputs*)
+      (defun interp-if/or (test tbr fbr x alist contexts . ,*glcp-common-inputs*)
         (declare (xargs
                   :measure (list (pos-fix clk) 2020 (+ (acl2-count test)
                                                        (acl2-count tbr)
@@ -405,8 +477,8 @@ but its arity is ~x3.  Its formal parameters are ~x4."
                               . ,*glcp-common-guards*)
                   :stobjs ,*glcp-stobjs*))
         (if (hqual test tbr)
-            (interp-or test fbr alist contexts . ,*glcp-common-inputs*)
-          (interp-if test tbr fbr alist contexts . ,*glcp-common-inputs*)))
+            (interp-or test fbr x alist contexts . ,*glcp-common-inputs*)
+          (interp-if test tbr fbr x alist contexts . ,*glcp-common-inputs*)))
 
       (defun maybe-interp (x alist contexts branchcond . ,*glcp-common-inputs*)
         (declare (xargs
@@ -417,17 +489,12 @@ but its arity is ~x3.  Its formal parameters are ~x4."
                               (contextsp contexts)
                               . ,*glcp-common-guards*)
                   :stobjs ,*glcp-stobjs*))
-        (b* ((branchcond (bfr-constr-fix branchcond
-                                         (is-constraint interp-st)))
-             ((mv contra pathcond undo) (bfr-assume branchcond pathcond))
-             ((glcp-er-unassume result)
-              (if contra
-                  (glcp-value nil)
-                (interp-term-equivs
-                 x alist contexts . ,*glcp-common-inputs*))))
-          (glcp-value result)))
+        (glcp-run-branch
+         branchcond
+         (interp-term-equivs
+          x alist contexts . ,*glcp-common-inputs*)))
 
-      (defun interp-or (test fbr alist contexts . ,*glcp-common-inputs*)
+      (defun interp-or (test fbr x alist contexts . ,*glcp-common-inputs*)
         (declare (xargs
                   :measure (list (pos-fix clk) 2020 (+ (acl2-count test)
                                                        (acl2-count fbr)) 50)
@@ -443,12 +510,14 @@ but its arity is ~x3.  Its formal parameters are ~x4."
                test alist (glcp-or-test-contexts contexts)  . ,*glcp-common-inputs*))
              ((glcp-er test-bfr)
               (simplify-if-test test-obj t . ,*glcp-common-inputs*))
-             ((glcp-er else)
+             ((glcp-er else-unreach else)
               (maybe-interp
-               fbr alist contexts (bfr-not test-bfr) . ,*glcp-common-inputs*)))
-          (merge-branches test-bfr test-obj else nil contexts . ,*glcp-common-inputs*)))
+               fbr alist contexts (bfr-not test-bfr) . ,*glcp-common-inputs*))
+             ((when else-unreach)
+              (glcp-value test-obj)))
+          (merge-branches test-bfr test-obj else x nil contexts . ,*glcp-common-inputs*)))
 
-      (defun interp-if (test tbr fbr alist contexts . ,*glcp-common-inputs*)
+      (defun interp-if (test tbr fbr x alist contexts . ,*glcp-common-inputs*)
         (declare (xargs
                   :measure (list (pos-fix clk) 2020 (+ (acl2-count test)
                                                        (acl2-count tbr)
@@ -464,15 +533,21 @@ but its arity is ~x3.  Its formal parameters are ~x4."
         (b* (((glcp-er test-bfr)
               (interp-test
                test alist t . ,*glcp-common-inputs*))
-             ((glcp-er then)
+             ((glcp-er then-unreachable then)
               (maybe-interp
                tbr alist contexts test-bfr . ,*glcp-common-inputs*))
-             ((glcp-er else)
+             ((glcp-er else-unreachable else)
               (maybe-interp
-               fbr alist contexts (bfr-not test-bfr) . ,*glcp-common-inputs*)))
-          (merge-branches test-bfr then else nil contexts . ,*glcp-common-inputs*)))
+               fbr alist contexts (bfr-not test-bfr) . ,*glcp-common-inputs*))
+             ((when then-unreachable)
+              (if else-unreachable
+                  (glcp-interp-abort :unreachable)
+                (glcp-value else)))
+             ((when else-unreachable)
+              (glcp-value then)))
+          (merge-branches test-bfr then else x nil contexts . ,*glcp-common-inputs*)))
 
-      (defun merge-branches (test-bfr then else switchedp contexts . ,*glcp-common-inputs*)
+      (defun merge-branches (test-bfr then else x switchedp contexts . ,*glcp-common-inputs*)
         (declare (xargs
                   :measure (list (pos-fix clk) 1818
                                  (+ (acl2-count then) (acl2-count else))
@@ -481,7 +556,8 @@ but its arity is ~x3.  Its formal parameters are ~x4."
                   :guard (and (posp clk)
                               (contextsp contexts)
                               . ,*glcp-common-guards*)
-                  :stobjs ,*glcp-stobjs*))
+                  :stobjs ,*glcp-stobjs*)
+                 (ignorable x))
         (b* ((pathcond (lbfr-hyp-fix pathcond))
              ((when (eq test-bfr t)) (glcp-value then))
              ((when (eq test-bfr nil)) (glcp-value else))
@@ -493,8 +569,8 @@ but its arity is ~x3.  Its formal parameters are ~x4."
                                  (eq (g-apply->fn then) 'quote)))))
               (if switchedp
                   (merge-branch-subterms
-                   (bfr-not test-bfr) else then . ,*glcp-common-inputs*)
-                (merge-branches (bfr-not test-bfr) else then t contexts . ,*glcp-common-inputs*)))
+                   (bfr-not test-bfr) else then x . ,*glcp-common-inputs*)
+                (merge-branches (bfr-not test-bfr) else then x t contexts . ,*glcp-common-inputs*)))
              (fn (if (eq (tag then) :g-apply)
                      (g-apply->fn then)
                    'cons))
@@ -508,10 +584,10 @@ but its arity is ~x3.  Its formal parameters are ~x4."
               (b* ((clk (1- clk)))
                 (interp-term-equivs term bindings contexts . ,*glcp-common-inputs*))))
           (if switchedp
-              (merge-branch-subterms (bfr-not test-bfr) else then . ,*glcp-common-inputs*)
-            (merge-branches (bfr-not test-bfr) else then t contexts . ,*glcp-common-inputs*))))
+              (merge-branch-subterms (bfr-not test-bfr) else then x . ,*glcp-common-inputs*)
+            (merge-branches (bfr-not test-bfr) else then x t contexts . ,*glcp-common-inputs*))))
 
-      (defun merge-branch-subterms (test-bfr then else
+      (defun merge-branch-subterms (test-bfr then else x
                                              . ,*glcp-common-inputs*)
         (declare (xargs :measure (list (pos-fix clk) 1818
                                        (+ (acl2-count then) (acl2-count else))
@@ -538,11 +614,11 @@ but its arity is ~x3.  Its formal parameters are ~x4."
               (b* (((glcp-er car) (merge-branches test-bfr
                                                   (general-consp-car then)
                                                   (general-consp-car else)
-                                                  nil nil . ,*glcp-common-inputs*))
+                                                  x nil nil . ,*glcp-common-inputs*))
                    ((glcp-er cdr) (merge-branches test-bfr
                                                   (general-consp-cdr then)
                                                   (general-consp-cdr else)
-                                                  nil nil . ,*glcp-common-inputs*)))
+                                                  x nil nil . ,*glcp-common-inputs*)))
                 (glcp-value ;; (gl-cons-split-ite car cdr)
                  (gl-cons-maybe-split car cdr
                                       (glcp-config->split-conses config)
@@ -551,13 +627,14 @@ but its arity is ~x3.  Its formal parameters are ~x4."
               (merge-branch-subterm-lists test-bfr
                                           (g-apply->args then)
                                           (g-apply->args else)
+                                          x
                                           . ,*glcp-common-inputs*)))
           (glcp-value (gl-fncall-maybe-split
                        (g-apply->fn then) args
                        (glcp-config->split-fncalls config)
                        (w state)))))
 
-      (defun merge-branch-subterm-lists (test-bfr then else
+      (defun merge-branch-subterm-lists (test-bfr then else x
                                                   . ,*glcp-common-inputs*)
         (declare (xargs :measure (list (pos-fix clk) 1818
                                        (+ (acl2-count then) (acl2-count else))
@@ -571,9 +648,9 @@ but its arity is ~x3.  Its formal parameters are ~x4."
               (glcp-value nil))
              ((cons then1 thenr) then)
              ((cons else1 elser) else)
-             ((glcp-er rest) (merge-branch-subterm-lists test-bfr thenr elser
+             ((glcp-er rest) (merge-branch-subterm-lists test-bfr thenr elser x
                                                          . ,*glcp-common-inputs*))
-             ((glcp-er first) (merge-branches test-bfr then1 else1 nil nil
+             ((glcp-er first) (merge-branches test-bfr then1 else1 x nil nil
                                               . ,*glcp-common-inputs*)))
           (glcp-value (cons first rest))))
 
@@ -585,15 +662,10 @@ but its arity is ~x3.  Its formal parameters are ~x4."
                   :guard (and (natp clk)
                               . ,*glcp-common-guards*)
                   :stobjs ,*glcp-stobjs*))
-        (b* ((branchcond (bfr-constr-fix branchcond
-                                         (is-constraint interp-st)))
-             ((mv contra pathcond undo) (bfr-assume branchcond pathcond))
-             ((glcp-er-unassume result)
-              (if contra
-                  (glcp-value nil)
-                (simplify-if-test
-                 test-obj intro-bvars . ,*glcp-common-inputs*))))
-          (glcp-value result)))
+        (glcp-run-branch
+         branchcond
+         (simplify-if-test
+          test-obj intro-bvars . ,*glcp-common-inputs*)))
 
       ;; returns a glcp-value of a bfr
       (defun simplify-if-test (test-obj intro-bvars . ,*glcp-common-inputs*)
@@ -626,12 +698,18 @@ but its arity is ~x3.  Its formal parameters are ~x4."
                                          test intro-bvars . ,*glcp-common-inputs*))
                     (then-hyp test-bfr)
                     (else-hyp (bfr-not test-bfr))
-                    ((glcp-er then-bfr)
+                    ((glcp-er then-unreach then-bfr)
                      (maybe-simplify-if-test
                       then intro-bvars then-hyp . ,*glcp-common-inputs*))
-                    ((glcp-er else-bfr)
+                    ((glcp-er else-unreach else-bfr)
                      (maybe-simplify-if-test
-                      else intro-bvars else-hyp . ,*glcp-common-inputs*)))
+                      else intro-bvars else-hyp . ,*glcp-common-inputs*))
+                    ((when then-unreach)
+                     (if else-unreach
+                         (glcp-interp-abort :unreachable)
+                       (glcp-value else-bfr)))
+                    ((when else-unreach)
+                     (glcp-value then-bfr)))
                  ;; Seems unlikely that hyp-fix would give any reductions here:
                  ;; maybe test this
                  (glcp-value (bfr-ite test-bfr then-bfr else-bfr))))
@@ -673,12 +751,18 @@ but its arity is ~x3.  Its formal parameters are ~x4."
              ((when (and (eq fn 'gl-force-check-fn)
                          (eql (len args) 3)))
               (b* (((glcp-er sub-bfr)
-                    (simplify-if-test (first args) intro-bvars . ,*glcp-common-inputs*)))
-                (glcp-value (bfr-force-check sub-bfr
-                                             (if (second args)
-                                                 (cpathcond)
-                                               t)
-                                             (third args)))))
+                    (simplify-if-test (first args) intro-bvars . ,*glcp-common-inputs*))
+                   ((mv pathcond-sat newcond)
+                    (bfr-force-check sub-bfr
+                                     (if (second args)
+                                         (cpathcond)
+                                       t)
+                                     (third args)))
+                   ((when pathcond-sat)
+                    (glcp-value newcond)))
+                ;; Not really an error: just found out that the path condition
+                ;; is unsat.
+                (glcp-interp-abort :unreachable)))
 
              ((when (zp clk))
               (glcp-interp-error "Clock ran out in simplify-if-test"))
@@ -1012,7 +1096,8 @@ but its arity is ~x3.  Its formal parameters are ~x4."
                                                 interp-st))
             ((mv hyp-bfr . ,(remove 'pathcond *glcp-common-retvals*))
              (interp-top-level-term
-              hypo al t 1000000 config interp-st bvar-db state))
+              hypo al t (glcp-config->hyp-clk config) config interp-st bvar-db
+              state))
             ((when er) (mv nil nil nil er interp-st bvar-db bvar-db1 state))
             (param-al (gobj-alist-to-param-space al hyp-bfr))
             (bvar-db1 (parametrize-bvar-db hyp-bfr bvar-db bvar-db1))
@@ -1021,7 +1106,8 @@ but its arity is ~x3.  Its formal parameters are ~x4."
             ((mv res-obj . ,(subst 'bvar-db1 'bvar-db
                                    (remove 'pathcond *glcp-common-retvals*)))
              (interp-top-level-term
-              term param-al hyp-bfr 100000 config interp-st bvar-db1 state)))
+              term param-al hyp-bfr (glcp-config->concl-clk config) config
+              interp-st bvar-db1 state)))
          (mv hyp-bfr param-al res-obj er interp-st bvar-db bvar-db1 state)))))
 
 

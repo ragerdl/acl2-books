@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Sol Swords <sswords@centtech.com>
 ;                  Jared Davis <jared@centtech.com>
@@ -47,7 +57,7 @@
 (include-book "intro")
 (include-book "centaur/gl/bfr-satlink" :dir :system)
 (local (include-book "booth-support"))
-(local (include-book "centaur/esim/stv/stv-decomp-proofs" :dir :system))
+(local (include-book "centaur/esim/stv/stv-decomp-proofs-even-better" :dir :system))
 ; (depends-on "boothmul.v")
 ; cert_param: (hons-only)
 ; cert_param: (uses-glucose)
@@ -77,7 +87,8 @@
 
 (defconst *boothmul*
   ;; Get the E module
-  (b* ((mods  (vl::vl-translation->mods *boothmul-translation*))
+  (b* ((good     (vl::vl-translation->good *boothmul-translation*))
+       (mods     (vl::vl-design->mods good))
        (boothmul (vl::vl-find-module "boothmul" mods))
        ((unless boothmul)
         (er hard? '*boothmul* "Failed to translate boothmul?"))
@@ -439,11 +450,66 @@
    :hints (("goal"
             ;; Need to know that the intermediate values are non-X:
             :use ((:instance boothmul-pps-types))
-            :in-theory (stv-decomp-theory))
-           (and stable-under-simplificationp
-                '(:in-theory (union-theories (stv-decomp-theory)
-                                             '(pairlis$-of-cons
-                                               pairlis$-when-atom)))))))
+            :in-theory (stv-decomp-theory)))))
+
+#|
+
+; BOZO: Using specific inputs instead of the autoins macros causes a 15-way
+; case-split.  Using specific hyps insteada of autohyps furthers that case
+; split to be 272-way.  Also, the proof doesn't go through.
+
+; If you are using the approach found in this book in your own proofs, you
+; should probably just use autoins and autohyps (or fix the cause).
+
+(local
+ (defthmd boothmul-decomp-is-boothmul-with-specific-inputs
+   (implies ;(boothmul-decomp-autohyps)
+             (AND (NATP A)
+                  (< A (EXPT 2 16))
+                  (NATP B)
+                  (< B (EXPT 2 16)))
+
+            (b* ( ;; Run the decomposed circuit to get the partial products
+                 (in-alist1 ;(boothmul-decomp-autoins)
+                            `((A . ,A)
+                              (B . ,B))
+                             )
+                 (out-alist1 (stv-run (boothmul-decomp) in-alist1))
+
+                 ;; Grab the resulting partial products out.
+                 ((assocs pp0 pp1 pp2 pp3 pp4 pp5 pp6 pp7) out-alist1)
+
+                 ;; Run the decomposed circuit again, sticking the partial
+                 ;; products back in on the inputs.  (This is a rather subtle use
+                 ;; of the autoins macro, which uses the bindings for pp0...pp7
+                 ;; above.)
+                 (in-alist2 ;(boothmul-decomp-autoins)
+                            `((PP0 . ,PP0)
+                              (PP1 . ,PP1)
+                              (PP2 . ,PP2)
+                              (PP3 . ,PP3)
+                              (PP4 . ,PP4)
+                              (PP5 . ,PP5)
+                              (PP6 . ,PP6)
+                              (PP7 . ,PP7)))
+                 (out-alist2 (stv-run (boothmul-decomp) in-alist2))
+
+                 ;; Separately, run the original circuit.
+                 (orig-in-alist  (boothmul-direct-autoins))
+                 (orig-out-alist (stv-run (boothmul-direct) orig-in-alist)))
+
+              (equal
+               ;; The final answer from running the decomposed circuit the second
+               ;; time, after feeding its partial products back into itself.
+               (cdr (assoc 'o out-alist2))
+
+               ;; The answer from running the original circuit.
+               (cdr (assoc 'o orig-out-alist)))))
+   :hints (("goal"
+            ;; Need to know that the intermediate values are non-X:
+            :use ((:instance boothmul-pps-types))
+            :in-theory (stv-decomp-theory)))))
+
 
 ; For reference, here is the same decomposition lemma, but proven using GL
 ; instead of the specialized theory:
@@ -466,6 +532,9 @@
    :g-bindings (boothmul-decomp-autobinds)))
 
 (local (in-theory (disable boothmul-decomp-is-boothmul-via-GL)))
+
+|#
+
 
 ; All that remains is to chain the above facts together.
 ;

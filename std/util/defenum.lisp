@@ -6,21 +6,32 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
 (in-package "STD")
 (include-book "support")
 (include-book "std/strings/cat" :dir :system)
+(include-book "centaur/fty/fixtype" :dir :system)
 (set-state-ok t)
 
 (defxdoc defenum
@@ -94,6 +105,15 @@ fast alist or other schemes, based on the elements it is given.</p>")
                    `(equal ,xvar ',e)))
             (defenum-members-to-tests (cdr members) xvar)))))
 
+(defund defenum-members-to-tests-equal (members xvar)
+  ;; Generate ((equal xvar member1) (equal xvar member2) ...)
+  (declare (xargs :guard t))
+  (if (atom members)
+      nil
+    (let ((e (car members)))
+      (cons `(equal ,xvar ',e)
+            (defenum-members-to-tests-equal (cdr members) xvar)))))
+
 ; (defenum-members-to-tests '(:a :b 3 5 #\a "foo" '(1 . 2)) 'x)
 
 (defun defenum-deduce-type-set (members)
@@ -122,7 +142,18 @@ fast alist or other schemes, based on the elements it is given.</p>")
         (t
          (dumb-collect-duplicates (cdr x) acc))))
 
-(defun defenum-fn (name members mode parents short long state)
+(defun strip-p-from-symbol (name)
+  ;; FOO-P --> FOO
+  (let* ((sname (symbol-name name))
+         (len   (length sname)))
+    (if (and (<= 2 len)
+             (equal (char sname (- len 1)) #\P)
+             (equal (char sname (- len 2)) #\-))
+        (intern-in-package-of-symbol (subseq sname 0 (- len 2))
+                                     name)
+      name)))
+
+(defun defenum-fn (name members mode parents short long defaultp default state)
   (declare (xargs :mode :program))
   (b* ((__function__ 'defenum)
        ((unless (symbolp name))
@@ -164,7 +195,6 @@ fast alist or other schemes, based on the elements it is given.</p>")
            ,doc
            ,def))
 
-
        (long (str::cat long "@(gthm type-when-" (symbol-name name) ")"))
 
        (doc `(defxdoc ,name
@@ -176,7 +206,43 @@ fast alist or other schemes, based on the elements it is given.</p>")
 
        ((mv ts-concl &)
         ;; Magic function from :doc type-set
-        (acl2::convert-type-set-to-term x ts (acl2::ens state) (w state) nil)))
+        (acl2::convert-type-set-to-term x ts (acl2::ens state) (w state) nil))
+
+       (fc-rule `(defthm ,(intern-in-package-of-symbol
+                           (concatenate 'string (symbol-name name) "-POSSIBILITIES")
+                           name)
+                   (implies (,name ,x)
+                            (or . ,(defenum-members-to-tests-equal members x)))
+                   :rule-classes :forward-chaining))
+
+       (name-without-p (std::strip-p-from-symbol name))
+
+       (fixname (intern-in-package-of-symbol
+                 (concatenate 'string (symbol-name name-without-p) "-FIX")
+                 name))
+       (equivname (intern-in-package-of-symbol
+                   (concatenate 'string (symbol-name name-without-p) "-EQUIV")
+                   name))
+
+       (fix `(defund-inline ,fixname (,x)
+               (declare (xargs :guard (,name ,x)))
+               (mbe :logic
+                    (if (,name ,x)
+                        ,x
+                      ',(if defaultp default (car (last members))))
+                    :exec
+                    ,x)))
+
+       (fix-type `(defthm ,(intern-in-package-of-symbol
+                            (concatenate 'string "RETURN-TYPE-OF-" (symbol-name name) "-FIX")
+                            name)
+                    (,name (,fixname ,x))))
+
+       (fix-id `(defthm ,(intern-in-package-of-symbol
+                            (concatenate 'string (symbol-name name) "-FIX-IDEMPOTENT")
+                            name)
+                  (implies (,name ,x)
+                           (equal (,fixname ,x) ,x)))))
 
     `(encapsulate
        ()
@@ -192,6 +258,21 @@ fast alist or other schemes, based on the elements it is given.</p>")
                    ,ts-concl)
           :rule-classes :compound-recognizer))
 
+       ,fc-rule
+
+       ,fix
+
+       (local (in-theory (enable ,fixname)))
+
+       ,fix-type
+
+       ,fix-id
+
+       (fty::deffixtype ,name
+         :pred ,name
+         :fix ,fixname
+         :equiv ,equivname
+         :define t)
        )))
 
 (defmacro defenum (name members
@@ -199,13 +280,14 @@ fast alist or other schemes, based on the elements it is given.</p>")
                         mode
                         (parents 'nil parents-p)
                         (short 'nil)
-                        (long 'nil))
+                        (long 'nil)
+                        (default 'nil defaultp))
   `(make-event (let ((mode (or ',mode (default-defun-mode (w state))))
                      (parents (if ',parents-p
                                   ',parents
                                 (or (xdoc::get-default-parents (w state))
                                     '(acl2::undocumented)))))
-                 (defenum-fn ',name ',members mode parents ',short ',long state))))
+                 (defenum-fn ',name ',members mode parents ',short ',long ,defaultp ',default state))))
 
 
 ;; Primitive tests

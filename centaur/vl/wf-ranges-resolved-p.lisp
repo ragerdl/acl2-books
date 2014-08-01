@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -56,6 +66,9 @@
                             (vl-netdecl->name x)
                             range))))
 
+(deffixequiv vl-netdecl-range-resolved-p :args ((x vl-netdecl-p))
+  :hints(("Goal" :in-theory (enable vl-netdecl-range-resolved-p))))
+
 (defthm vl-maybe-range-resolved-p-of-vl-netdecl->range
   (implies (vl-netdecl-range-resolved-p x)
            (vl-maybe-range-resolved-p (vl-netdecl->range x)))
@@ -73,30 +86,33 @@
 
 
 
-(defwellformed vl-regdecl-range-resolved-p (x)
-  :guard (vl-regdecl-p x)
-  :body (let ((range (vl-regdecl->range x)))
-          (@wf-assert (vl-maybe-range-resolved-p range)
-                      :vl-range-unresolved
-                      "~l0: failed to resolve range of reg ~s1: current range is ~x2."
-                      (list (vl-regdecl->loc x)
-                            (vl-regdecl->name x)
-                            range))))
+(defwellformed vl-vardecl-range-resolved-p (x)
+  :guard (vl-vardecl-p x)
+  :body (@wf-assert (or (not (vl-simplereg-p x))
+                        (vl-maybe-range-resolved-p (vl-simplereg->range x)))
+                    :vl-range-unresolved
+                    "~l0: failed to resolve range of variable ~s1: current range is ~x2."
+                    (list (vl-vardecl->loc x)
+                          (vl-vardecl->name x)
+                          (vl-simplereg->range x))))
 
-(defthm vl-maybe-range-resolved-p-of-vl-regdecl->range
-  (implies (vl-regdecl-range-resolved-p x)
-           (vl-maybe-range-resolved-p (vl-regdecl->range x)))
-  :hints(("Goal" :in-theory (enable vl-regdecl-range-resolved-p))))
+(deffixequiv vl-vardecl-range-resolved-p :args ((x vl-vardecl-p))
+  :hints(("Goal" :in-theory (enable vl-vardecl-range-resolved-p))))
 
-(defwellformed-list vl-regdecllist-ranges-resolved-p (x)
-  :element vl-regdecl-range-resolved-p
-  :guard (vl-regdecllist-p x))
+;; (defthm vl-maybe-range-resolved-p-of-vl-vardecl->range
+;;   (implies (vl-vardecl-range-resolved-p x)
+;;            (vl-maybe-range-resolved-p (vl-vardecl->range x)))
+;;   :hints(("Goal" :in-theory (enable vl-vardecl-range-resolved-p))))
 
-(defthm vl-range-resolved-p-of-vl-regdecl-range-of-vl-find-regdecl
-  (implies (force (vl-regdecllist-ranges-resolved-p x))
-           (vl-regdecl-range-resolved-p (vl-find-regdecl name x)))
-  :hints(("Goal"
-          :in-theory (enable vl-find-regdecl))))
+(defwellformed-list vl-vardecllist-ranges-resolved-p (x)
+  :element vl-vardecl-range-resolved-p
+  :guard (vl-vardecllist-p x))
+
+;; (defthm vl-range-resolved-p-of-vl-vardecl-range-of-vl-find-vardecl
+;;   (implies (force (vl-vardecllist-ranges-resolved-p x))
+;;            (vl-vardecl-range-resolved-p (vl-find-vardecl name x)))
+;;   :hints(("Goal"
+;;           :in-theory (enable vl-find-vardecl))))
 
 
 
@@ -155,7 +171,7 @@
   (@wf-progn
    (@wf-call vl-portdecllist-ranges-resolved-p (vl-module->portdecls x))
    (@wf-call vl-netdecllist-ranges-resolved-p (vl-module->netdecls x))
-   (@wf-call vl-regdecllist-ranges-resolved-p (vl-module->regdecls x))
+   (@wf-call vl-vardecllist-ranges-resolved-p (vl-module->vardecls x))
    (@wf-call vl-modinstlist-ranges-resolved-p (vl-module->modinsts x))
    (@wf-call vl-gateinstlist-ranges-resolved-p (vl-module->gateinsts x))))
 
@@ -169,9 +185,9 @@
            (vl-netdecllist-ranges-resolved-p (vl-module->netdecls x)))
   :hints(("Goal" :in-theory (enable vl-module-ranges-resolved-p))))
 
-(defthm vl-regdecllist-ranges-resolved-p-when-vl-module-ranges-resolved-p
+(defthm vl-vardecllist-ranges-resolved-p-when-vl-module-ranges-resolved-p
   (implies (force (vl-module-ranges-resolved-p x))
-           (vl-regdecllist-ranges-resolved-p (vl-module->regdecls x)))
+           (vl-vardecllist-ranges-resolved-p (vl-module->vardecls x)))
   :hints(("Goal" :in-theory (enable vl-module-ranges-resolved-p))))
 
 (defthm vl-modinstlist-ranges-resolved-p-when-vl-module-ranges-resolved-p

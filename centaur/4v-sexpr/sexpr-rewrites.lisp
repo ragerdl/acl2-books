@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Sol Swords <sswords@centtech.com>
 
@@ -24,6 +34,8 @@
 (include-book "centaur/misc/hons-extra" :dir :system)
 (include-book "sexpr-vars-1pass")
 (include-book "std/misc/two-nats-measure" :dir :system)
+(include-book "std/lists/remove-duplicates" :dir :system)
+(local (include-book "std/lists/top" :dir :system))
 (local (in-theory (disable set::double-containment)))
 
 (make-event
@@ -852,8 +864,8 @@ input."
              ;; AND with self
              ((and a a)             . (buf a))
              ;; ??? "Normalize" false-when-boolean things to (xor a a)
-             ((and a (not a))       . (xor a a))
-             ((and (not a) a)       . (xor a a))
+             ((and a (not a))       . (xdet a))
+             ((and (not a) a)       . (xdet a))
              ;; AND inputs are buffered
              ((and (buf a) b)       . (and a b))
              ((and a (buf b))       . (and a b))
@@ -929,6 +941,9 @@ input."
              ((xor (buf a) b)       . (xor a b))
              ((xor a (buf b))       . (xor a b))
 
+             ((xor (not a) b)       . (not (xor a b)))
+             ((xor a (not b))       . (not (xor a b)))
+
              ;; OR constant propagation
              ((or (t) a)            . (t))
              ((or a (t))            . (t))
@@ -937,8 +952,8 @@ input."
              ;; OR with self
              ((or a a)              . (buf a))
              ;; ??? "Normalize" true-when-boolean to (not (xor a a))
-             ((or a (not a))        . (not (xor a a)))
-             ((or (not a) a)        . (not (xor a a)))
+             ((or a (not a))        . (not (xdet a)))
+             ((or (not a) a)        . (not (xdet a)))
              ;; OR inputs are buffered
              ((or (buf a) b)        . (or a b))
              ((or a (buf b))        . (or a b))
@@ -1005,6 +1020,8 @@ input."
              ;; ITE* constant propagation
              ((ite* (t) a b)         . (buf a))
              ((ite* (f) a b)         . (buf b))
+             ((ite* a (T) (F))       . (buf a))
+             ((ite* a (F) (T))       . (not a))
              ;; ITE* remove NOT on condition
              ((ite* (not c) a b)     . (ite* c b a))
              ;; ITE* inputs are buffered
@@ -1055,7 +1072,15 @@ input."
              ((pullup (pullup a))      . (pullup a))
 
              ;; ID can always just go away.
-             ((id a)                . a))))
+             ((id a)                . a)
+
+             ;; Fancy new rule to replace (xor a a) with smaller AIGs.  This
+             ;; reduces AIG sizes by about 8% on an example from MMX.
+             ((xor a a) . (xdet a))
+             ((xdet (not a)) . (xdet a))
+             ((xdet (buf a)) . (xdet a))
+
+             )))
 
       (reverse
        (fast-alist-free
@@ -2563,7 +2588,7 @@ simplifying using the known signals."
 
 
   (defthm subsetp-4v-sexpr-vars-of-sexpr-boolean-rw-n
-    (subsetp-equal (4v-sexpr-vars 
+    (subsetp-equal (4v-sexpr-vars
                     (sexpr-boolean-rw-n n x brules))
                    (4v-sexpr-vars x))
     :hints ((set-reasoning))))

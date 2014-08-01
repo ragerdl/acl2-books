@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 
 
 ; esim-sexpr.lisp -- efficient symbolic simulator for E modules
@@ -1630,10 +1640,23 @@ the existing update functions without modification."
   :features (:probe :simplify))
 
 
-(defdoc esim
-  ":doc-section esim
+(defxdoc esim
+  :parents (hardware-verification)
+  :short "ESIM is a simple, hierarchical, bit-level, cycle-based,
+register-transfer level hardware description language.  It is based on a clean,
+monotonic four-valued logic (see @(see acl2::4v)) and features strong support
+for symbolic simulation with @(see gl::gl)."
 
-ESIM is a hardware simulator similar to EMOD.~/~/~/")
+  :long "<p>Unfortunately E is not well documented.  An early version of E is
+described in:</p>
+
+<p>Warren A. Hunt, Jr. and Sol Swords.  <a
+href='http://dx.doi.org/10.1007/978-3-642-02658-4_28'>Centaur technology media
+unit verification.  Case study: Floating point addition.</a> in Computer Aided
+Verification (CAV '09), June 2009.</p>
+
+<p>E modules are typically produced from Verilog designs using @(see vl).</p>")
+
 
 (defmacro 4v-sexpr-to-faig-plain-alist (x onoff)
   `(4v-sexpr-to-faig-alist-fn1 ,x ,onoff nil))

@@ -1,26 +1,36 @@
 ; VL Verilog Toolkit
-; Copyright (C) 2008-2011 Centaur Technology
+; Copyright (C) 2008-2014 Centaur Technology
 ;
 ; Contact:
 ;   Centaur Technology Formal Verification Group
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
 (in-package "VL")
 (include-book "../mlib/writer")
-(include-book "../mlib/fix")
+(include-book "../mlib/strip")
 (include-book "../mlib/expr-tools")
 (local (include-book "../util/arithmetic"))
 
@@ -36,9 +46,9 @@
   :short "Check for instances and assignments that are literally identical."
 
   :long "<p>This is a heuristic for generating warnings.  We look for
-assignments, module instances, and gate instances that are identical <see
-topic='@(url fixing-functions)'>up to fixing</see>.  These sorts of things
-might well be copy/paste errors.</p>")
+assignments, module instances, and gate instances that are identical up to
+<i>stripping</i> as described in @(see stripping-functions).  These sorts of
+things might well be copy/paste errors.</p>")
 
 (local (xdoc::set-default-parents duplicate-detect))
 
@@ -53,11 +63,7 @@ might well be copy/paste errors.</p>")
         ((= n 2)
          (cat "~l2 and ~l1"))
         (t
-         (cat "~l" (natstr n) ", " (vl-locationlist-string (- n 1)))))
-  ///
-  (defthm stringp-of-vl-locationlist-string
-    (stringp (vl-locationlist-string n))
-    :rule-classes :type-prescription))
+         (cat "~l" (natstr n) ", " (vl-locationlist-string (- n 1))))))
 
 (define vl-make-duplicate-warning ((type stringp)
                                    (locs vl-locationlist-p)
@@ -105,8 +111,6 @@ might well be copy/paste errors.</p>")
        (rest    (vl-duplicate-gateinst-warnings (cdr dupes) fixed orig modname)))
     (cons warning rest)))
 
-
-
 (define vl-duplicate-modinst-locations
   ((dupe  vl-modinst-p "Some modinst that was duplicated (fixed).")
    (fixed vl-modinstlist-p "Fixed versions of @('orig').")
@@ -135,7 +139,6 @@ might well be copy/paste errors.</p>")
        (rest    (vl-duplicate-modinst-warnings (cdr dupes) fixed orig modname)))
     (cons warning rest)))
 
-
 (define vl-duplicate-assign-locations
   ((dupe  vl-assign-p     "Some assign that was duplicated (fixed).")
    (fixed vl-assignlist-p "Fixed versions of @('orig').")
@@ -157,6 +160,7 @@ might well be copy/paste errors.</p>")
    (modname stringp))
   :guard (same-lengthp fixed orig)
   :returns (warnings vl-warninglist-p "Warnings for each duplicate assign.")
+  :guard-debug t
   (b* (((when (atom dupes))
         nil)
        (locs    (vl-duplicate-assign-locations (car dupes) fixed orig))
@@ -173,16 +177,15 @@ might well be copy/paste errors.</p>")
        (rest    (vl-duplicate-assign-warnings (cdr dupes) fixed orig modname)))
     (cons warning rest)))
 
-
 (define vl-module-duplicate-detect ((x vl-module-p))
   :short "Detect duplicate assignments and instances throughout a module."
   :returns (new-x vl-module-p :hyp :fguard
                   "Same as @('x'), but perhaps with more warnings.")
   (b* (((vl-module x) x)
 
-       (gateinsts-fix (vl-gateinstlist-fix x.gateinsts))
-       (modinsts-fix  (vl-modinstlist-fix x.modinsts))
-       (assigns-fix   (vl-assignlist-fix x.assigns))
+       (gateinsts-fix (vl-gateinstlist-strip x.gateinsts))
+       (modinsts-fix  (vl-modinstlist-strip x.modinsts))
+       (assigns-fix   (vl-assignlist-strip x.assigns))
 
        (gateinst-dupes (duplicated-members gateinsts-fix))
        (modinst-dupes  (duplicated-members modinsts-fix))
@@ -211,18 +214,19 @@ might well be copy/paste errors.</p>")
                          ass-warnings
                          x.warnings)))
 
-    (change-vl-module x :warnings warnings))
-  ///
-  (defthm vl-module->name-of-vl-module-duplicate-detect
-    (equal (vl-module->name (vl-module-duplicate-detect x))
-           (vl-module->name x))))
+    (change-vl-module x :warnings warnings)))
 
 (defprojection vl-modulelist-duplicate-detect (x)
   (vl-module-duplicate-detect x)
   :guard (vl-modulelist-p x)
-  :result-type vl-modulelist-p
-  ///
-  (defthm vl-modulelist->names-of-vl-modulelist-duplicate-detect
-    (equal (vl-modulelist->names (vl-modulelist-duplicate-detect x))
-           (vl-modulelist->names x))))
+  :result-type vl-modulelist-p)
+
+(define vl-design-duplicate-detect
+  :short "Top-level @(see duplicate-detect) check."
+  ((x vl-design-p))
+  :returns (new-x vl-design-p)
+  (b* ((x (vl-design-fix x))
+       ((vl-design x) x))
+    (change-vl-design x :mods (vl-modulelist-duplicate-detect x.mods))))
+
 

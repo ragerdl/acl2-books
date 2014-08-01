@@ -1,26 +1,32 @@
-# certlib.pl - Library routines for cert.pl, critpath.pl, etc.
-# Copyright 2008-2009 by Sol Swords 
+# cert.pl build system
+# Copyright (C) 2008-2014 Centaur Technology
 #
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation; either version 2 of the License, or (at your option) any later
-# version.
+# Contact:
+#   Centaur Technology Formal Verification Group
+#   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+#   http://www.centtech.com/
 #
-# This program is distributed in the hope that it will be useful, but WITHOUT
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
-# details.
+# License: (An MIT/X11-style license)
 #
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc., 675 Mass
-# Ave, Cambridge, MA 02139, USA.
+#   Permission is hereby granted, free of charge, to any person obtaining a
+#   copy of this software and associated documentation files (the "Software"),
+#   to deal in the Software without restriction, including without limitation
+#   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+#   and/or sell copies of the Software, and to permit persons to whom the
+#   Software is furnished to do so, subject to the following conditions:
 #
-# NOTE.  This file is not part of the standard ACL2 books build process; it is
-# part of an experimental build system that is not yet intended, for example,
-# to be capable of running the whole regression.  The ACL2 developers do not
-# maintain this file.  Please contact Sol Swords <sswords@cs.utexas.edu> with
-# any questions/comments.
-
+#   The above copyright notice and this permission notice shall be included in
+#   all copies or substantial portions of the Software.
+#
+#   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+#   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+#   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+#   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+#   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+#   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+#   DEALINGS IN THE SOFTWARE.
+#
+# Original author: Sol Swords <sswords@centtech.com>
 
 use strict;
 use warnings;
@@ -1164,7 +1170,8 @@ sub src_deps {
     my ($fname,             # file to scan for dependencies
 	$depdb,             # dep database
 	$certinfo,          # certinfo accumulator
-	$portp,             # Allow following LD commands, and add books to port rather than bookdeps
+        $ldp,               # allow following LD commands
+	$portp,             # Add books to port rather than bookdeps
 	$seen,              # seen table for detecting circular dependencies
 	$parent)            # file that required this one
 	= @_;
@@ -1279,7 +1286,7 @@ sub src_deps {
 	    my $fullname = expand_dirname_cmd($srcname, $fname, $dir,
 					      $certinfo->include_dirs, "loads", "");
 	    if ($fullname) {
-		src_deps($fullname, $depdb, $certinfo, $portp, $seen, $fname);
+		src_deps($fullname, $depdb, $certinfo, $ldp, $portp, $seen, $fname);
 	    } else {
 		print "Bad path in (loads \"$srcname\""
 		    . ($dir ? " :dir $dir)" : ")") . " in $fname\n";
@@ -1288,18 +1295,17 @@ sub src_deps {
 	    # print "cert_param: $fname, " . $event->[1] . " = " . $event->[2] . "\n";
 	    $certinfo->params->{$event->[1]} = $event->[2];
 	} elsif ($type eq $ld_event) {
-	    if ($portp) {
-		my $srcname = $event->[1];
-		my $dir = $event->[2];
-		my $fullname = expand_dirname_cmd($srcname, $fname, $dir,
-						  $certinfo->include_dirs, "ld", "");
-		if ($fullname) {
-		    src_deps($fullname, $depdb, $certinfo, $portp, $seen, $fname);
-		} else {
-		    print "Bad path in (ld \"$srcname\""
-			. ($dir ? " :dir $dir)" : ")") . " in $fname\n";
-		}
+	    my $srcname = $event->[1];
+	    my $dir = $event->[2];
+	    my $fullname = expand_dirname_cmd($srcname, $fname, $dir,
+					      $certinfo->include_dirs, "ld", "");
+	    if ($fullname) {
+		src_deps($fullname, $depdb, $certinfo, $ldp, $portp, $seen, $fname);
 	    } else {
+		print "Bad path in (ld \"$srcname\""
+		    . ($dir ? " :dir $dir)" : ")") . " in $fname\n";
+	    }
+	    if (! $ldp) {
 		print "Warning: LD event in book context in $fname:\n";
 		print_event($event);
 		print "\n";
@@ -1368,12 +1374,12 @@ sub find_deps {
 	# Scan the .acl2 file first so that we get the add-include-book-dir
 	# commands before the include-book commands.
 	if ($acl2file) {
-	    src_deps($acl2file, $depdb, $certinfo, 1, {}, $lispfile);
+	    src_deps($acl2file, $depdb, $certinfo, 1, 1, {}, $lispfile);
 	}
     }
 
     # Scan the lisp file for include-books.
-    src_deps($lispfile, $depdb, $certinfo, 0, {}, $parent);
+    src_deps($lispfile, $depdb, $certinfo, (! $certifiable), 0, {}, $parent);
 
     if ($debugging) {
 	print "find_deps $lispfile: bookdeps:\n";
@@ -1574,6 +1580,7 @@ sub add_deps {
 	print "Error: Need $lispfile to build $target"
                . ($parent ? " (parent: $parent)" : "")
 	       . ".\n";
+	delete $depdb->certdeps->{$target};
 	return;
     }
 

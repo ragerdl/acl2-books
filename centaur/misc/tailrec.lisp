@@ -7,15 +7,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Sol Swords <sswords@centtech.com>
 
@@ -32,7 +42,7 @@
 (include-book "clause-processors/generalize" :dir :system)
 (local (include-book "std/lists/take" :dir :system))
 (local (include-book "arithmetic/top" :dir :system))
-
+(local (include-book "std/lists/sets" :dir :system))
 
 ;; Part 1: Generic theory showing that a tail-recursive function can be defined
 ;; regardless of its termination, along with an induction scheme that can be
@@ -278,24 +288,39 @@
           (and (subsetp-equal a c)
                (subsetp-equal b c))))
 
-   (defthm-flag-term-vars
+   (defthm subsetp-of-symbol-<-merge-1
+     (iff (subsetp (symbol-<-merge x y) z)
+          (and (subsetp x z) (subsetp y z)))
+     :hints(("Goal" :in-theory (enable symbol-<-merge))))
+   (defthm subsetp-of-symbol-<-merge-2
+     (iff (subsetp z (symbol-<-merge x y))
+          (subsetp z (append x y)))
+     :hints(("Goal" :in-theory (enable symbol-<-merge)
+             :induct (len z))))
+
+   (defthm symbol-<-merge-under-set-equiv
+     (set-equiv (symbol-<-merge x y)
+                (append x y))
+     :hints(("Goal" :in-theory (enable set-equiv))))
+
+   (defthm-simple-term-vars-flag
      (defthm normalize-sym-alist-eval
-       (implies (and (subsetp-equal (term-vars x) keys)
+       (implies (and (subsetp-equal (simple-term-vars x) keys)
                      (pseudo-termp x))
                 (equal (partial-ev x (normalize-sym-alist keys al))
                        (partial-ev x al)))
-       :hints ('(:expand (term-vars x))
+       :hints ('(:expand ((simple-term-vars x)))
                (and stable-under-simplificationp
                     '(:in-theory (enable partial-ev-constraint-0))))
-       :flag term)
+       :flag simple-term-vars)
      
      (defthm normalize-sym-alist-eval-lst
-       (implies (and (subsetp-equal (term-vars-list x) keys)
+       (implies (and (subsetp-equal (simple-term-vars-lst x) keys)
                      (pseudo-term-listp x))
                 (equal (partial-ev-lst x (normalize-sym-alist keys al))
                        (partial-ev-lst x al)))
-       :hints ('(:expand (term-vars-list x)))
-       :flag list))
+       :hints ('(:expand (simple-term-vars-lst x)))
+       :flag simple-term-vars-lst))
 
    (defthm subsetp-cons
      (implies (subsetp x y)
@@ -325,7 +350,7 @@
   (declare (xargs :guard (and (symbol-listp vars)
                               (pseudo-termp body)
                               (pseudo-term-listp args))))
-  (b* ((bound-vars (remove-duplicates (term-vars body)))
+  (b* ((bound-vars (remove-duplicates (simple-term-vars body)))
        (alist (pairlis$ vars args))
        (alist (normalize-sym-alist bound-vars alist)))
     (mv (strip-cars alist) body (strip-cdrs alist))))
@@ -334,7 +359,7 @@
   (declare (xargs :guard (and (pseudo-termp body)
                               (symbol-listp vars))))
   (if (and (equal vars args)
-           (subsetp-equal (term-vars body) vars))
+           (subsetp-equal (simple-term-vars body) vars))
       body
     `((lambda ,vars ,body) . ,args)))
 
@@ -382,24 +407,24 @@
                        (partial-ev body (pairlis$ vars (partial-ev-lst args alist))))
                      (partial-ev body (pairlis$ vars (partial-ev-lst args alist))))))
 
-   (defthm-flag-term-vars
+   (defthm-simple-term-vars-flag
      (defthm eval-under-identity-alist-containing-all-vars
-       (implies (and (subsetp-equal (term-vars x) keys)
+       (implies (and (subsetp-equal (simple-term-vars x) keys)
                      (pseudo-termp x))
                 (equal (partial-ev x (pairlis$ keys (partial-ev-lst keys al)))
                        (partial-ev x al)))
-       :hints ('(:expand (term-vars x))
+       :hints ('(:expand (simple-term-vars x))
                (and stable-under-simplificationp
                     '(:in-theory (enable partial-ev-constraint-0))))
-       :flag term)
+       :flag simple-term-vars)
      
      (defthm eval-list-under-identity-alist-containing-all-vars
-       (implies (and (subsetp-equal (term-vars-list x) keys)
+       (implies (and (subsetp-equal (simple-term-vars-lst x) keys)
                      (pseudo-term-listp x))
                 (equal (partial-ev-lst x (pairlis$ keys (partial-ev-lst keys al)))
                        (partial-ev-lst x al)))
-       :hints ('(:expand (term-vars-list x)))
-       :flag list))
+       :hints ('(:expand (simple-term-vars-lst x)))
+       :flag simple-term-vars-lst))
 
    (defthm clean-lambda2-correct
      (implies (pseudo-termp body)
@@ -689,12 +714,6 @@
      (equal (partial-ev (mk-list-term x) al)
             (partial-ev-lst x al)))
 
-   (local
-    (defthm take-len-when-true-listp
-      (implies (and (true-listp x) (equal n (len x)))
-               (equal (take n x)
-                      x))))
-
    (defthm partial-ev-lst-type
      (true-listp (partial-ev-lst x al))
      :hints (("goal" :induct (len x)))
@@ -848,18 +867,20 @@
               (equal (partial-ev (cdr (assoc-equal x alist)) a)
                      (partial-ev x a))))
 
-   (defthm-flag-replace-subterms
+   (defthm-replace-subterms-flag
      (defthm replace-subterms-when-equal-term-alists
        (implies (partial-ev-equal-term-alistp alist al)
                 (equal (partial-ev (replace-subterms x alist) al)
                        (partial-ev x al)))
        :flag term
        :hints ((and stable-under-simplificationp
-                    '(:in-theory (enable partial-ev-constraint-0)))))
+                    '(:in-theory (enable partial-ev-constraint-0)
+                      :expand ((replace-subterms x alist))))))
      (defthm replace-subterms-when-equal-term-alists-list
        (implies (partial-ev-equal-term-alistp alist al)
                 (equal (partial-ev-lst (replace-subterms-list x alist) al)
                        (partial-ev-lst x al)))
+       :hints ('(:expand ((replace-subterms-list x alist))))
        :flag list))
 
 
@@ -996,26 +1017,26 @@
                (pairlis$ (append extras vars)
                          (partial-ev-lst (append extras args) al)))))))
 
-   (defthm-flag-term-vars
+   (defthm-simple-term-vars-flag
      (defthm eval-under-identity-alist-containing-all-vars1
-       (implies (and (subsetp-equal (term-vars x) keys)
+       (implies (and (subsetp-equal (simple-term-vars x) keys)
                      (pseudo-termp x))
                 (equal (partial-ev x (pairlis$ (append keys vars)
                                                (partial-ev-lst (append keys vals) al)))
                        (partial-ev x al)))
-       :hints ('(:expand (term-vars x))
+       :hints ('(:expand (simple-term-vars x))
                (and stable-under-simplificationp
                     '(:in-theory (enable partial-ev-constraint-0))))
-       :flag term)
+       :flag simple-term-vars)
      
      (defthm eval-list-under-identity-alist-containing-all-vars1
-       (implies (and (subsetp-equal (term-vars-list x) keys)
+       (implies (and (subsetp-equal (simple-term-vars-lst x) keys)
                      (pseudo-term-listp x))
                 (equal (partial-ev-lst x (pairlis$ (append keys vars)
                                                    (partial-ev-lst (append keys vals) al)))
                        (partial-ev-lst x al)))
-       :hints ('(:expand (term-vars-list x)))
-       :flag list))))
+       :hints ('(:expand (simple-term-vars-lst x)))
+       :flag simple-term-vars-lst))))
 
 
 ;; clause processor for the terminates-redef proof.
@@ -1091,25 +1112,25 @@
 
 (local
  (progn
-   (defthm-flag-term-vars
-     (defthm eval-when-term-vars-empty
+   (defthm-simple-term-vars-flag
+     (defthm eval-when-simple-term-vars-empty
        (implies (and (syntaxp (not (equal al ''nil)))
-                     (atom (term-vars x)))
+                     (atom (simple-term-vars x)))
                 (equal (partial-ev x al)
                        (partial-ev x nil)))
-       :hints ('(:expand (term-vars x))
+       :hints ('(:expand (simple-term-vars x))
                (and stable-under-simplificationp
                     '(:in-theory (enable partial-ev-constraint-0)
                       :use ((:instance partial-ev-constraint-0 (a nil))))))
-       :flag term)
+       :flag simple-term-vars)
      
-     (defthm eval-list-when-term-vars-empty
+     (defthm eval-list-when-simple-term-vars-empty
        (implies (and (syntaxp (not (equal al ''nil)))
-                     (atom (term-vars-list x)))
+                     (atom (simple-term-vars-lst x)))
                 (equal (partial-ev-lst x al)
                        (partial-ev-lst x nil)))
-       :hints ('(:expand (term-vars-list x)))
-       :flag list))
+       :hints ('(:expand (simple-term-vars-lst x)))
+       :flag simple-term-vars-lst))
 
    (defthm len-is-0-rw
      (equal (equal (len x) 0)
@@ -1142,15 +1163,12 @@
                                 partial-ev-constraint-10
                                 partial-ev-constraint-0-rewrite
                                 default-car default-cdr len
-                                term-vars-when-symbolp
-                                term-vars-list-of-cons
                                 append-to-nil
                                 default-coerce-1
                                 default-coerce-2
                                 not
-                                TRUE-LISTP-OF-FLAG-TERM-VARS-TERM
                                 (:type-prescription pseudo-termp)
-                                (:type-prescription term-vars)
+                                (:type-prescription simple-term-vars)
                                 (:type-prescription has-tail-call)
                                 (:type-prescription pseudo-term-listp)
                                 get-mv-nths
@@ -1169,7 +1187,7 @@
                        (not (eq tailfn 'quote))
                        (pseudo-termp x)
                        (natp arity)
-                       (not (term-vars base))
+                       (not (simple-term-vars base))
                        (equal extras nil)
                        (pseudo-termp base))
                   (equal (partial-ev new-body al)

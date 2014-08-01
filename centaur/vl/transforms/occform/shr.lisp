@@ -1,20 +1,30 @@
 ; VL Verilog Toolkit
-; Copyright (C) 2008-2011 Centaur Technology
+; Copyright (C) 2008-2014 Centaur Technology
 ;
 ; Contact:
 ;   Centaur Technology Formal Verification Group
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -22,6 +32,7 @@
 (include-book "shl")
 (local (include-book "../../util/arithmetic"))
 (local (include-book "../../util/osets"))
+(local (std::add-default-post-define-hook :fix))
 (local (non-parallel-book))
 (local (in-theory (disable vl-maybe-module-p-when-vl-module-p)))
 
@@ -50,7 +61,7 @@
 ;   temp2 = temp1 >> (b[2] * 2^2)          "place 2"
 ;   ...
 
-(def-vl-modgen vl-make-n-bit-shr-place-p (n p)
+(def-vl-modgen vl-make-n-bit-shr-place-p ((n posp) (p posp))
   :short "Generate a module that conditionally shifts an @('N') bit number by
 @('2**(P-1)') bits to the right."
 
@@ -71,10 +82,10 @@ endmodule
 <p>These \"place shifters\" can be combined to form a full shifter that
 operates on O(log_2 n) muxes.</p>"
 
-  :guard (and (posp n) (posp p))
-
   :body
-  (b* ((shift-amount (expt 2 (- p 1)))
+  (b* ((n     (lposfix n))
+       (p     (lposfix p))
+       (shift-amount (expt 2 (- p 1)))
        (name  (hons-copy (cat "VL_" (natstr n) "_BIT_SHR_PLACE_" (natstr p))))
 
        ((mv out-expr out-port out-portdecl out-netdecl)             (vl-occform-mkport "out" :vl-output n))
@@ -117,8 +128,8 @@ operates on O(log_2 n) muxes.</p>"
 
 (define vl-make-n-bit-shr-place-ps ((n posp)
                                     (p natp))
-  :returns (mv (shift-mods vl-modulelist-p :hyp :fguard)
-               (support-mods vl-modulelist-p :hyp :fguard))
+  :returns (mv (shift-mods   vl-modulelist-p)
+               (support-mods vl-modulelist-p))
   :parents (occform)
   :short "Generate a list of place-shifters, counting down from P to 1."
 
@@ -151,7 +162,7 @@ operates on O(log_2 n) muxes.</p>"
                  :in-theory (disable l0)
                  :use ((:instance l0 (x (rev x))))))))
 
-(def-vl-modgen vl-make-n-bit-shr-by-m-bits (n m)
+(def-vl-modgen vl-make-n-bit-shr-by-m-bits ((n posp) (m posp))
   :short "Generate a module that shifts an @('N') bit number right by an @('M')
 bit number."
 
@@ -167,11 +178,10 @@ module VL_N_BIT_SHR_BY_M_BITS (out, a, b) ;
 endmodule
 })"
 
-  :guard (and (posp n)
-              (posp m))
-
   :body
-  (b* ((name (hons-copy (cat "VL_" (natstr n) "_BIT_SHR_BY_" (natstr m) "_BITS")))
+  (b* ((n    (lposfix n))
+       (m    (lposfix m))
+       (name (hons-copy (cat "VL_" (natstr n) "_BIT_SHR_BY_" (natstr m) "_BITS")))
 
        ((mv out-expr out-port out-portdecl out-netdecl) (vl-occform-mkport "out" :vl-output n))
        ((mv a-expr a-port a-portdecl a-netdecl)         (vl-occform-mkport "a" :vl-input n))
@@ -219,7 +229,7 @@ endmodule
        (lhs-exprs (cons a-expr (butlast temp-exprs 1)))
        (b-wires   (vl-make-list-of-bitselects b-expr 0 (- m 1)))
 
-       ((when (= m k))
+       ((when (eql m k))
         ;; We have exactly the right number of bits in B, so we can give one
         ;; bit to each shifter.
         (b* ((pshift-insts (vl-make-modinsts-for-shl 1 pshift-mods temp-exprs lhs-exprs b-wires)))

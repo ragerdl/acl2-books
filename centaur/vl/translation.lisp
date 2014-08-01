@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -29,21 +39,24 @@
 
 (defaggregate vl-translation
   :parents (defmodules)
-  :short "The result of translating Verilog modules."
+  :short "The result of translating a Verilog or SystemVerilog design."
 
-  ((mods          vl-modulelist-p
-                  "A list of fully simplified, successfully translated
-                   modules.")
+  ((good          vl-design-p
+                  "Fully translated modules, etc., for whatever subset of the
+                   overall design we were able to successfully translate.
+                   This is the \"good subset\" of the design.")
 
-   (failmods      vl-modulelist-p
-                  "A list of partially simplified modules that, for some reason,
-                   could not be fully simplified.  Typically each module here
-                   will have fatal @(see warnings).")
+   (bad           vl-design-p
+                  "Partially translated modules, etc., that, for whatever
+                   reason, we were unable to successfully translate.  The
+                   modules here will typically have fatal warnings.  This This
+                   is the \"bad subset\" or at least the \"unsupported subset\"
+                   of the design.")
 
-   (origmods      vl-modulelist-p
-                  "The raw list of unsimplified modules that were found
-                   immediately after parsing.  This can be useful for
-                   pretty-printing and understanding modules.")
+   (orig          vl-design-p
+                  "The raw, unsimplified design that we obtained immediately
+                   after parsing.  This can be useful for pretty-printing and
+                   understanding modules.")
 
    (filemap       vl-filemap-p
                   "The actual Verilog source code that was read. Occasionally
@@ -55,15 +68,6 @@
                    encountered during parsing, and their final values. This is
                    sometimes useful for extracting definitions like opcodes,
                    etc.")
-
-   (loadwarnings  vl-warninglist-p
-                  "A list of \"floating\" warnings that were encountered during
-                   the load process.  This usually does not have anything
-                   interesting in it, because most warnings get associated with
-                   modules in @('mods') or @('failmods') instead.  It may,
-                   however, contain miscellaneous warnings from <i>between</i>
-                   modules, or that cannot be attributed to particular
-                   modules.")
 
    (useset-report vl-useset-report-p
                   "A report that contains the results of running the @(see
@@ -90,7 +94,9 @@ to say which version you want, e.g., @('\"adder$width=4\"').</p>
 the translation's @('failmods') field, whereas successful modules are kept in
 the @('mods') field.)</p>"
 
-  (vl-has-module modname (vl-translation->mods x)))
+  (vl-has-module modname
+                 (vl-design->mods
+                  (vl-translation->good x))))
 
 (define vl-translation-get-esim ((modname stringp)
                                  (x vl-translation-p))
@@ -100,7 +106,9 @@ the @('mods') field.)</p>"
   :short "Get an E Module for a successfully translated module."
   :prepwork ((local (in-theory (enable vl-translation-has-module))))
 
-  (b* ((mod  (vl-find-module modname (vl-translation->mods x)))
+  (b* ((mod  (vl-find-module modname
+                             (vl-design->mods
+                              (vl-translation->good x))))
        (esim (vl-module->esim mod))
        ((unless esim)
         (raise "Module ~x0 has no esim?" modname)))

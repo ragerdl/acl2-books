@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -62,10 +72,10 @@ See @(see acl2::acl2-doc) for details.</li>
 
 </ul>
 
-<p>You can also build your own copy of the manual as follows.
-(This has been tested using CCL on Linux and Mac OS X, but may work for other
-OS/Lisp combinations.)  To do this, you first need to build ACL2(h), then
-certify the @('doc/top') book, e.g., as follows:</p>
+<p>You can also build your own copy of the manual as follows. (This has been
+tested using CCL on Linux and Mac OS X, but may work for other OS/Lisp
+combinations.)  To do this, you first need to build ACL2(h), then certify the
+@('doc/top') book, e.g., as follows:</p>
 
 @({
   cd acl2-sources/books
@@ -179,8 +189,8 @@ markup) language, and may also use @(see preprocessor) commands to insert
 function definitions, theorems, topic links, and so on.</p>
 
 <p>Many examples of using XDOC can be found throughout the ACL2 books.  See for
-instance the @(see acl2::std), @(see acl2::str) or @(see acl2::std/osets)
-libraries.</p>
+instance the @(see acl2::std), @(see acl2::std/strings) or @(see
+acl2::std/osets) libraries.</p>
 
 <h3>Note for Advanced Users</h3>
 
@@ -603,9 +613,10 @@ manual with others, you should read about @(see deploying-manuals).</li>
 
 @({
     (save <target-dir>
-          [:type      type]      ;; default is :fancy
           [:import    import]    ;; default is t
-          <classic-options>)
+          [:redef-okp bool]      ;; default is nil
+          [:zip-p     bool]      ;; default is t
+          )
 })
 
 <p>The only (required) argument to the @('save') command is the name of a
@@ -619,13 +630,6 @@ directory where the want the manual to go.  As might be expected:</p>
 overwritten</color>.</li>
 
 </ul>
-
-<p>XDOC can generate two kinds of manuals.  By default, it generates a
-so-called <i>fancy</i> manual, with a rich JavaScript interface that has, e.g.,
-jump-to and search capabilities.  Alternately you can generate a much more
-plain @(see classic-manual) by using @(':type :classic'), but we may move to
-deprecate classic manuals in the future.</p>
-
 
 <h3>Avoiding Unwanted Documentation</h3>
 
@@ -641,8 +645,8 @@ deprecate classic manuals in the future.</p>
 
 <p>However, you may find that even after setting @(':import nil'), some
 extraneous documentation is still being included!  For instance, you may find
-documentation from libraries like @(see str::str) and @(see oslib::oslib) in
-your output.</p>
+documentation from libraries like @(see acl2::std/strings) and @(see
+oslib::oslib) in your output.</p>
 
 <p>This is because @('xdoc/save') includes some supporting books that are,
 themselves, documented.  If you really want precise control over what goes into
@@ -833,65 +837,6 @@ just need to change:</p>
 
 <p>At this point, your manual should load topic data dynamically as needed.
 The result should be much faster for users on slow connections.</p>")
-
-
-(defxdoc classic-manual
-  :parents (save)
-  :short "Description of @(':type :classic') manuals."
-
-  :long "<box><p><b>Note</b>: we generally discourage the use of classic
-manuals.  We may deprecate them in the future.</p></box>
-
-<p>If you run @(see save) with @(':type :classic'), it will write out
-a manual in the \"classic\" format.  In this case, the resulting manual
-directory will include:</p>
-
-<ul>
-
-<li>@('xml/'), a subdirectory with a @('.xml') file for each topic and some
-supporting files, and</li>
-
-<li>@('Makefile'), a Makefile for converting these files into other formats,
-and</li>
-
-<li>@('preview.html'), a web page that lets you directly view the XML files
-using your web browser.</li>
-
-</ul>
-
-<p>Many web browsers can directly display XML files, so you may be able to view
-@('preview.html') without any additional steps.</p>
-
-
-<h3>HTML and Other Formats</h3>
-
-<p>You can generate a plain HTML or TEXT version of your manual by using
-@('make html') or @('make text') from within the directory target of the above
-mentioned @('xdoc::save') command (in this example, the @('mylib-manual')
-directory).  We might add support for TEXINFO or other formats in the
-future.</p>
-
-<p>After running @('make html'), you may wish to open @('frames2.html') and
-@('frames3.html'), which allow you to navigate the HTML manual much like
-@('preview.html') allows you to navigate the XML version.  These pages accept
-an optional argument named <tt>topic</tt> that tells the browser to
-automatically go to a particular topic.  For example, one can go to the
-<tt>XDOC::save</tt> topic by using the url
-<tt>frames3.html?topic=XDOC____SAVE.html</tt>.</p>
-
-<p>Converting to HTML is a good idea because it ensures that all of your tags
-are balanced on every page.  Without this sanity check, your manual might
-contain errors that will prevent some topics from being loaded in a web
-browser.</p>
-
-<p>Creating the HTML code requires Xalan-C++.  Xalan is distributed with many
-Linux distributions.  For example, on Ubuntu, one can run <tt>sudo apt-get
-install xalan</tt> to install it.  Alternatively, see <a
-href=\"http://xml.apache.org/xalan-c/\">Apache Xalan</a> to download.  We have
-accomodated the various versions of Xalan that we know about and use, but we
-welcome modifications to file <tt>support/Makefile-trans</tt> if you wish to
-use a version we do not currently support.</p>")
-
 
 (defxdoc emacs-links
   :short "Instructions for integrating XDOC web pages with <a

@@ -1,20 +1,30 @@
 ; VL Verilog Toolkit
-; Copyright (C) 2008-2011 Centaur Technology
+; Copyright (C) 2008-2014 Centaur Technology
 ;
 ; Contact:
 ;   Centaur Technology Formal Verification Group
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -24,10 +34,11 @@
 (include-book "../mlib/find-item")
 (include-book "../mlib/expr-tools")
 (include-book "../mlib/hid-tools")
+(include-book "../mlib/stmt-tools")
 (include-book "../wf-ranges-resolved-p")
 (local (include-book "../util/arithmetic"))
 (local (include-book "../util/osets"))
-
+(local (in-theory (enable tag-reasoning)))
 
 ;; BOZO hid-elim stuff is sort of deprecated and has been split off into another
 ;; file, need to clean this up, and clean up its documentation
@@ -130,8 +141,8 @@
              "On success, the actual range of the target wire.  We only produce
               a range and say it is resolved if (1) the wire is unsigned,
               and (2) there are no arrdims.  These are important for soundness;
-              see @(see vl-hidexpr-hid-elim).  It would probably not be too
-              hard to relax the unsigned restriction, but arrdims might be more
+              see @('vl-hidexpr-hid-elim').  It would probably not be too hard
+              to relax the unsigned restriction, but arrdims might be more
               difficult."
              :hyp (and (force (vl-expr-p x))
                        (force (vl-hidexpr-p x))
@@ -149,6 +160,7 @@ identifier like @('foo.bar.baz.wire'), we try to find out what kind of module
 to report this information as well.</p>"
 
   :verify-guards nil
+  :measure (vl-expr-count x)
 
   (b* (((when (vl-fast-atom-p x))
         (b* ((name (vl-hidpiece->name (vl-atom->guts x)))
@@ -164,52 +176,53 @@ to report this information as well.</p>"
                                      (cat name " not found")))
                   x nil nil nil))
 
-             ((unless (or (eq (tag item) :vl-netdecl)
-                          (eq (tag item) :vl-regdecl)))
-              (mv (fatal :type :vl-unresolved-hid
-                         :msg *vl-unresolved-hid-msg*
-                         :args (list ctx-hid
-                                     ctx-modname
-                                     (vl-module->name curr)
-                                     name
-                                     (cat "Expected " name " to be a net or reg, but found "
-                                          (symbol-name (tag item)))))
-                  x nil nil nil))
+             (tag     (tag item))
+             (modname (string-fix (vl-module->name curr)))
 
-             ((mv range signedp arrdims)
-              (if (eq (tag item) :vl-netdecl)
-                  (mv (vl-netdecl->range item)
-                      (vl-netdecl->signedp item)
-                      (vl-netdecl->arrdims item))
-                (mv (vl-regdecl->range item)
-                    (vl-regdecl->signedp item)
-                    (vl-regdecl->arrdims item))))
+             ((when (eq tag :vl-netdecl))
+              (b* (((vl-netdecl item) item)
+                   ;; Try to simplify the range.  We didn't originally do this,
+                   ;; but I later found that we weren't fully resolving some
+                   ;; HIDs because their declared ranges were things like
+                   ;; [`foo-1:0].  So we can do a bit better by trying to
+                   ;; resolve the ranges.
+                   ((mv & range) (vl-maybe-rangeresolve item.range nil))
+                   (range-resolvedp
+                    ;; See vl-hid-expr-elim, don't say it's resolved unless
+                    ;; it's also unsigned and has no arrdims.
+                    (and (not item.signedp)
+                         (not item.arrdims)
+                         (vl-maybe-range-resolved-p range))))
+                (mv (ok) x modname range-resolvedp range)))
 
-             (range
-              ;; Try to simplify the range.  We didn't originally do this, but
-              ;; I later found that we weren't fully resolving some HIDs
-              ;; because their declared ranges were things like [`foo-1:0].  So
-              ;; we can do a bit better by trying to resolve the ranges.
-              (b* (((when (vl-maybe-range-resolved-p range))
-                          range)
-                         ((mv ?warnings new-range)
-                          (vl-rangeresolve range nil)))
-                      new-range))
+             ((when (eq tag :vl-vardecl))
+              (b* (;; BOZO maybe handle some other kinds here
+                   ((unless (vl-simplereg-p item))
+                    ;; Some other kind of variable: we will just not claim to
+                    ;; know the size of it.
+                    (mv (ok) x modname nil nil))
+                   ;; Reg case.
+                   (signedp (vl-simplereg->signedp item))
+                   (range   (vl-simplereg->range item))
+                   ((mv & range) (vl-maybe-rangeresolve range nil))
+                   (range-resolvedp
+                    ;; See vl-hid-expr-elim, don't say it's resolved unless
+                    ;; it's also unsigned and has no arrdims.
+                    (and (not signedp)
+                         ;; already know there are no arrdims since it's a simplereg
+                         (vl-maybe-range-resolved-p range))))
+                (mv (ok) x modname range-resolvedp range))))
 
-             (range-resolvedp
-              ;; See vl-hid-expr-elim, don't say it's resolved unless it's also
-              ;; unsigned and has no arrdims.
-              (and (not signedp)
-                   (not arrdims)
-                   (vl-maybe-range-resolved-p range)))
-
-             (modname (string-fix (vl-module->name curr))))
-
-          (mv (ok) x modname range-resolvedp range)))
-
-       ((unless (mbt (consp x)))
-        (impossible)
-        (mv (ok) x nil nil nil))
+          ;; Otherwise, some other kind of thing...
+          (mv (fatal :type :vl-unresolved-hid
+                     :msg *vl-unresolved-hid-msg*
+                     :args (list ctx-hid
+                                 ctx-modname
+                                 (vl-module->name curr)
+                                 name
+                                 (cat "Expected " name " to be a net or variable, but found "
+                                      (symbol-name (tag item)))))
+              x nil nil nil)))
 
        ((vl-nonatom x) x)
 
@@ -290,15 +303,16 @@ to report this information as well.</p>"
 
   (verify-guards vl-find-hid-module-aux)
 
-  (defthm vl-atom-p-of-vl-find-hid-module-aux
+  (defthm vl-expr-kind-of-vl-find-hid-module-aux
     (implies (and (force (vl-expr-p x))
                   (force (vl-hidexpr-p x))
                   (force (vl-module-p curr))
                   (force (vl-modulelist-p mods))
                   (force (equal modalist (vl-modalist mods))))
-             (iff (vl-atom-p (mv-nth 1 (vl-find-hid-module-aux x curr mods modalist warnings
-                                                               ctx-hid ctx-modname)))
-                  (vl-atom-p x))))
+             (equal (vl-expr-kind
+                     (mv-nth 1 (vl-find-hid-module-aux x curr mods modalist warnings
+                                                       ctx-hid ctx-modname)))
+                    (vl-expr-kind x))))
 
   (defthm vl-nonatom->op-of-vl-find-hid-module-aux
     (implies (and (force (vl-expr-p x))
@@ -306,7 +320,7 @@ to report this information as well.</p>"
                   (force (vl-module-p curr))
                   (force (vl-modulelist-p mods))
                   (force (equal modalist (vl-modalist mods)))
-                  (force (vl-nonatom-p x)))
+                  (force (not (vl-atom-p x))))
              (equal (vl-nonatom->op
                      (mv-nth 1 (vl-find-hid-module-aux x curr mods modalist warnings
                                                        ctx-hid ctx-modname)))
@@ -318,7 +332,7 @@ to report this information as well.</p>"
                   (force (vl-module-p curr))
                   (force (vl-modulelist-p mods))
                   (force (equal modalist (vl-modalist mods)))
-                  (force (vl-nonatom-p x)))
+                  (force (not (vl-atom-p x))))
              (equal (len (vl-nonatom->args
                           (mv-nth 1 (vl-find-hid-module-aux x curr mods modalist warnings
                                                             ctx-hid ctx-modname))))
@@ -473,17 +487,17 @@ identifier.</p>"
              (vl-expr-p
               (mv-nth 1 (vl-find-hid-module x mod mods modalist toplev warnings)))))
 
-  (defthm vl-atom-p-of-vl-find-hid-module
+  (defthm vl-expr-kind-of-vl-find-hid-module
     (implies (and (force (vl-expr-p x))
                   (force (vl-hidexpr-p x))
                   (force (vl-module-p mod))
                   (force (vl-modulelist-p mods))
                   (force (equal modalist (vl-modalist mods))))
-             (iff (vl-atom-p (mv-nth 1 (vl-find-hid-module x mod mods modalist toplev warnings)))
-                  (vl-atom-p x))))
+             (equal (vl-expr-kind (mv-nth 1 (vl-find-hid-module x mod mods modalist toplev warnings)))
+                    (vl-expr-kind x))))
 
   (defthm vl-nonatom->op-of-vl-find-hid-module
-    (implies (and (force (vl-nonatom-p x))
+    (implies (and (force (not (vl-atom-p x)))
                   (force (vl-expr-p x))
                   (force (vl-hidexpr-p x))
                   (force (vl-module-p mod))
@@ -494,7 +508,7 @@ identifier.</p>"
                     (vl-nonatom->op x))))
 
   (defthm len-of-vl-nonatom->args-of-vl-find-hid-module
-    (implies (and (force (vl-nonatom-p x))
+    (implies (and (force (not (vl-atom-p x)))
                   (force (vl-expr-p x))
                   (force (vl-hidexpr-p x))
                   (force (vl-module-p mod))
@@ -539,8 +553,6 @@ identifier.</p>"
                   (force (equal modalist (vl-modalist mods))))
              (vl-range-resolved-p
               (mv-nth 4 (vl-find-hid-module x mod mods modalist toplev warnings))))))
-
-
 
 
 (defsection vl-expr-follow-hids
@@ -588,7 +600,7 @@ identifier.</p>"
                                  (vl-warninglist-p warnings))
                      :hints(("Goal" :in-theory (disable (force))))
                      :verify-guards nil
-                     :measure (two-nats-measure (acl2-count x) 1)))
+                     :measure (vl-expr-count x)))
 
      (cond ((vl-hidexpr-p x)
             (b* (((when (vl-fast-atom-p x))
@@ -657,7 +669,7 @@ identifier.</p>"
                                  (equal modalist (vl-modalist mods))
                                  (equal toplev (vl-modulelist-toplevel mods))
                                  (vl-warninglist-p warnings))
-                     :measure (two-nats-measure (acl2-count x) 0)))
+                     :measure (vl-exprlist-count x)))
      (if (atom x)
          (mv warnings nil)
        (b* (((mv warnings car-prime) (vl-expr-follow-hids (car x) mod mods modalist
@@ -887,13 +899,14 @@ identifier.</p>"
 
 (def-vl-follow-hids vl-arguments-follow-hids
   :type vl-arguments-p
-  :body (b* ((namedp (vl-arguments->namedp x))
-             (args   (vl-arguments->args x))
-             ((mv warnings args-prime)
-              (if (vl-arguments->namedp x)
-                  (vl-namedarglist-follow-hids args mod mods modalist toplev warnings)
-                (vl-plainarglist-follow-hids args mod mods modalist toplev warnings))))
-            (mv warnings (vl-arguments namedp args-prime))))
+  :body
+  (vl-arguments-case x
+    :named (b* (((mv warnings args-prime)
+                 (vl-namedarglist-follow-hids x.args mod mods modalist toplev warnings)))
+             (mv warnings (change-vl-arguments-named x :args args-prime)))
+    :plain (b* (((mv warnings args-prime)
+                 (vl-plainarglist-follow-hids x.args mod mods modalist toplev warnings)))
+             (mv warnings (change-vl-arguments-plain x :args args-prime)))))
 
 (def-vl-follow-hids vl-modinst-follow-hids
   :type vl-modinst-p
@@ -995,201 +1008,106 @@ identifier.</p>"
           :use ((:instance vl-delayoreventcontrol-p-of-vl-delayoreventcontrol-follow-hids)))))
 
 
-(def-vl-follow-hids vl-nullstmt-follow-hids
-  :type vl-nullstmt-p
-  :body (mv warnings x))
+(defines vl-stmt-follow-hids
 
-(def-vl-follow-hids vl-assignstmt-follow-hids
-  :type vl-assignstmt-p
-  :body (b* (((mv warnings lvalue-prime)
-              (vl-expr-follow-hids (vl-assignstmt->lvalue x)
-                                   mod mods modalist toplev warnings))
-             ((mv warnings expr-prime)
-              (vl-expr-follow-hids (vl-assignstmt->expr x)
-                                   mod mods modalist toplev warnings))
-             ((mv warnings ctrl-prime)
-              (vl-maybe-delayoreventcontrol-follow-hids (vl-assignstmt->ctrl x)
-                                                        mod mods modalist toplev
-                                                        warnings))
-             (x-prime
-              (change-vl-assignstmt x
-                                    :lvalue lvalue-prime
-                                    :expr expr-prime
-                                    :ctrl ctrl-prime)))
-            (mv warnings x-prime)))
+  (define vl-stmt-follow-hids ((x        vl-stmt-p)
+                               (mod      vl-module-p)
+                               (mods     vl-modulelist-p)
+                               (modalist (equal modalist (vl-modalist mods)))
+                               (toplev   (equal toplev (vl-modulelist-toplevel mods)))
+                               (warnings vl-warninglist-p))
+    :measure (vl-stmt-count x)
+    :returns (mv (warnings vl-warninglist-p)
+                 (new-x    vl-stmt-p
+                           :hyp (and (force (vl-stmt-p x))
+                                     (force (vl-module-p mod))
+                                     (force (vl-modulelist-p mods))
+                                     (force (equal modalist (vl-modalist mods))))))
+    :verify-guards nil
+    (b* ((x        (vl-stmt-fix x))
+         (warnings (vl-warninglist-fix warnings))
 
-(def-vl-follow-hids vl-deassignstmt-follow-hids
-  :type vl-deassignstmt-p
-  :body (b* (((mv warnings lvalue-prime)
-              (vl-expr-follow-hids (vl-deassignstmt->lvalue x)
-                                   mod mods modalist toplev warnings))
-             (x-prime
-              (change-vl-deassignstmt x :lvalue lvalue-prime)))
-            (mv warnings x-prime)))
+         ((when (vl-atomicstmt-p x))
+          (case (vl-stmt-kind x)
+            (:vl-nullstmt
+             (mv warnings x))
+            (:vl-assignstmt
+             (b* (((vl-assignstmt x) x)
+                  ((mv warnings lvalue-prime)
+                   (vl-expr-follow-hids x.lvalue mod mods modalist toplev warnings))
+                  ((mv warnings expr-prime)
+                   (vl-expr-follow-hids x.expr mod mods modalist toplev warnings))
+                  ((mv warnings ctrl-prime)
+                   (vl-maybe-delayoreventcontrol-follow-hids x.ctrl mod mods modalist toplev warnings))
+                  (x-prime (change-vl-assignstmt x
+                                                 :lvalue lvalue-prime
+                                                 :expr expr-prime
+                                                 :ctrl ctrl-prime)))
+               (mv warnings x-prime)))
 
-(def-vl-follow-hids vl-enablestmt-follow-hids
-  :type vl-enablestmt-p
-  :body (b* (((mv warnings id-prime)
-              (vl-expr-follow-hids (vl-enablestmt->id x)
-                                   mod mods modalist toplev warnings))
-             ((mv warnings args-prime)
-              (vl-exprlist-follow-hids (vl-enablestmt->args x)
-                                       mod mods modalist toplev warnings))
-             (x-prime
-              (change-vl-enablestmt x
-                                    :id id-prime
-                                    :args args-prime)))
-            (mv warnings x-prime)))
+            (:vl-deassignstmt
+             (b* (((mv warnings lvalue-prime)
+                   (vl-expr-follow-hids (vl-deassignstmt->lvalue x) mod mods modalist toplev warnings))
+                  (x-prime (change-vl-deassignstmt x :lvalue lvalue-prime)))
+               (mv warnings x-prime)))
 
-(def-vl-follow-hids vl-disablestmt-follow-hids
-  :type vl-disablestmt-p
-  :body (b* (((mv warnings id-prime)
-              (vl-expr-follow-hids (vl-disablestmt->id x)
-                                   mod mods modalist toplev warnings))
-             (x-prime
-              (change-vl-disablestmt x :id id-prime)))
-            (mv warnings x-prime)))
+            (:vl-enablestmt
+             (b* (((mv warnings id-prime)
+                   (vl-expr-follow-hids (vl-enablestmt->id x) mod mods modalist toplev warnings))
+                  ((mv warnings args-prime)
+                   (vl-exprlist-follow-hids (vl-enablestmt->args x) mod mods modalist toplev warnings))
+                  (x-prime
+                   (change-vl-enablestmt x
+                                         :id id-prime
+                                         :args args-prime)))
+               (mv warnings x-prime)))
 
-(def-vl-follow-hids vl-eventtriggerstmt-follow-hids
-  :type vl-eventtriggerstmt-p
-  :body (b* (((mv warnings id-prime)
-              (vl-expr-follow-hids (vl-eventtriggerstmt->id x)
-                                   mod mods modalist toplev warnings))
-             (x-prime
-              (change-vl-eventtriggerstmt x :id id-prime)))
-            (mv warnings x-prime)))
+            (:vl-disablestmt
+             (b* (((mv warnings id-prime)
+                   (vl-expr-follow-hids (vl-disablestmt->id x) mod mods modalist toplev warnings))
+                  (x-prime (change-vl-disablestmt x :id id-prime)))
+               (mv warnings x-prime)))
 
-(def-vl-follow-hids vl-atomicstmt-follow-hids
-  :type vl-atomicstmt-p
-  :body (case (tag x)
-          (:vl-nullstmt         (vl-nullstmt-follow-hids     x mod mods modalist toplev warnings))
-          (:vl-assignstmt       (vl-assignstmt-follow-hids   x mod mods modalist toplev warnings))
-          (:vl-deassignstmt     (vl-deassignstmt-follow-hids x mod mods modalist toplev warnings))
-          (:vl-enablestmt       (vl-enablestmt-follow-hids   x mod mods modalist toplev warnings))
-          (:vl-disablestmt      (vl-disablestmt-follow-hids  x mod mods modalist toplev warnings))
-          (:vl-eventtriggerstmt (vl-eventtriggerstmt-follow-hids x mod mods modalist
-                                                                 toplev warnings))
-          (otherwise
-           (mv (er hard 'vl-atomicstmt-follow-hids
-                   "Impossible case.   This is not really an error.  We are just ~
-                    using the guard mechanism to prove that all cases have been ~
-                    covered.")
-               x))))
+            (otherwise
+             (b* (((mv warnings id-prime)
+                   (vl-expr-follow-hids (vl-eventtriggerstmt->id x) mod mods modalist toplev warnings))
+                  (x-prime (change-vl-eventtriggerstmt x :id id-prime)))
+               (mv warnings x-prime)))))
 
-(defsection vl-stmt-follow-hids
+         ((mv warnings exprs-prime)
+          (vl-exprlist-follow-hids (vl-compoundstmt->exprs x) mod mods modalist toplev warnings))
+         ((mv warnings stmts-prime)
+          (vl-stmtlist-follow-hids (vl-compoundstmt->stmts x) mod mods modalist toplev warnings))
+         ((mv warnings ctrl-prime)
+          (vl-maybe-delayoreventcontrol-follow-hids (vl-compoundstmt->ctrl x) mod mods modalist toplev warnings))
+         (x-prime (change-vl-compoundstmt x
+                                          :exprs exprs-prime
+                                          :stmts stmts-prime
+                                          :ctrl ctrl-prime)))
+        (mv warnings x-prime)))
 
-  (mutual-recursion
+   (define vl-stmtlist-follow-hids ((x        vl-stmtlist-p)
+                                    (mod      vl-module-p)
+                                    (mods     vl-modulelist-p)
+                                    (modalist (equal modalist (vl-modalist mods)))
+                                    (toplev   (equal toplev (vl-modulelist-toplevel mods)))
+                                    (warnings vl-warninglist-p))
+     :measure (vl-stmtlist-count x)
+     :returns (mv (warnings vl-warninglist-p)
+                  (new-x    (and (equal (len new-x) (len x))
+                                 (implies (and (force (vl-stmtlist-p x))
+                                               (force (vl-module-p mod))
+                                               (force (vl-modulelist-p mods))
+                                               (force (equal modalist (vl-modalist mods))))
+                                          (vl-stmtlist-p new-x)))))
+     (b* (((when (atom x))
+           (mv (ok) nil))
+          ((mv warnings car-prime) (vl-stmt-follow-hids (car x) mod mods modalist toplev warnings))
+          ((mv warnings cdr-prime) (vl-stmtlist-follow-hids (cdr x) mod mods modalist toplev warnings)))
+       (mv warnings (cons car-prime cdr-prime))))
 
-   (defund vl-stmt-follow-hids (x mod mods modalist toplev warnings)
-     (declare (xargs :guard (and (vl-stmt-p x)
-                                 (vl-module-p mod)
-                                 (vl-modulelist-p mods)
-                                 (equal modalist (vl-modalist mods))
-                                 (equal toplev (vl-modulelist-toplevel mods))
-                                 (vl-warninglist-p warnings))
-                     :verify-guards nil
-                     :measure (two-nats-measure (acl2-count x) 1)))
-     (if (vl-fast-atomicstmt-p x)
-         (vl-atomicstmt-follow-hids x mod mods modalist toplev warnings)
-       (b* (((mv warnings exprs-prime)
-             (vl-exprlist-follow-hids (vl-compoundstmt->exprs x)
-                                      mod mods modalist toplev warnings))
-            ((mv warnings stmts-prime)
-             (vl-stmtlist-follow-hids (vl-compoundstmt->stmts x)
-                                      mod mods modalist toplev warnings))
-            ((mv warnings ctrl-prime)
-             (vl-maybe-delayoreventcontrol-follow-hids (vl-compoundstmt->ctrl x)
-                                                       mod mods modalist toplev warnings))
-            (x-prime
-             (change-vl-compoundstmt x
-                                     :exprs exprs-prime
-                                     :stmts stmts-prime
-                                     :ctrl ctrl-prime)))
-           (mv warnings x-prime))))
-
-   (defund vl-stmtlist-follow-hids (x mod mods modalist toplev warnings)
-     (declare (xargs :guard (and (vl-stmtlist-p x)
-                                 (vl-module-p mod)
-                                 (vl-modulelist-p mods)
-                                 (equal modalist (vl-modalist mods))
-                                 (equal toplev (vl-modulelist-toplevel mods))
-                                 (vl-warninglist-p warnings))
-                     :measure (two-nats-measure (acl2-count x) 0)))
-     (if (atom x)
-         (mv warnings nil)
-       (b* (((mv warnings car-prime) (vl-stmt-follow-hids (car x) mod mods modalist
-                                                          toplev warnings))
-            ((mv warnings cdr-prime) (vl-stmtlist-follow-hids (cdr x) mod mods modalist
-                                                              toplev warnings)))
-           (mv warnings (cons car-prime cdr-prime))))))
-
-  (FLAG::make-flag vl-flag-stmt-follow-hids
-                   vl-stmt-follow-hids
-                   :flag-mapping ((vl-stmt-follow-hids . stmt)
-                                  (vl-stmtlist-follow-hids . list)))
-
-  (defthm-vl-flag-stmt-follow-hids lemma
-    (stmt (implies (force (vl-warninglist-p warnings))
-                   (vl-warninglist-p (mv-nth 0 (vl-stmt-follow-hids
-                                                x mod mods modalist toplev warnings))))
-          :name vl-warninglist-p-of-vl-stmt-follow-hids)
-    (list (implies (force (vl-warninglist-p warnings))
-                   (vl-warninglist-p (mv-nth 0 (vl-stmtlist-follow-hids
-                                                x mod mods modalist toplev warnings))))
-          :name vl-warninglist-p-of-vl-stmtlist-follow-hids)
-    :hints(("Goal"
-            :induct (vl-flag-stmt-follow-hids flag x mod mods modalist toplev warnings)
-            :expand ((vl-stmt-follow-hids x mod mods modalist toplev warnings)
-                     (vl-stmtlist-follow-hids x mod mods modalist toplev warnings)))))
-
-  (defthm vl-stmtlist-follow-hids-when-not-consp
-    (implies (not (consp x))
-             (equal (vl-stmtlist-follow-hids x mod mods modalist toplev warnings)
-                    (mv warnings nil)))
-    :hints(("Goal" :in-theory (enable vl-stmtlist-follow-hids))))
-
-  (defthm vl-stmtlist-follow-hids-of-cons
-    (equal (vl-stmtlist-follow-hids (cons a x) mod mods modalist toplev warnings)
-           (b* (((mv warnings car-prime) (vl-stmt-follow-hids a mod mods modalist toplev warnings))
-                ((mv warnings cdr-prime) (vl-stmtlist-follow-hids x mod mods modalist toplev warnings)))
-               (mv warnings (cons car-prime cdr-prime))))
-    :hints(("Goal" :in-theory (enable vl-stmtlist-follow-hids))))
-
-  (local (defun my-induction (x mod mods modalist toplev warnings)
-           (if (atom x)
-               (mv warnings x)
-             (b* (((mv warnings car-prime)
-                   (vl-stmt-follow-hids (car x) mod mods modalist toplev warnings))
-                  ((mv warnings cdr-prime)
-                   (my-induction (cdr x) mod mods modalist toplev warnings)))
-                 (mv warnings (cons car-prime cdr-prime))))))
-
-  (defthm len-of-vl-stmtlist-follow-hids
-    (equal (len (mv-nth 1 (vl-stmtlist-follow-hids x mod mods modalist toplev warnings)))
-           (len x))
-    :hints(("Goal" :induct (my-induction x mod mods modalist toplev warnings))))
-
-  (defthm-vl-flag-stmt-follow-hids lemma
-    (stmt (implies (and (force (vl-stmt-p x))
-                        (force (vl-module-p mod))
-                        (force (vl-modulelist-p mods))
-                        (force (equal modalist (vl-modalist mods))))
-                   (vl-stmt-p (mv-nth 1 (vl-stmt-follow-hids x mod mods modalist
-                                                             toplev warnings))))
-          :name vl-stmt-p-of-vl-stmt-follow-hids)
-    (list (implies (and (force (vl-stmtlist-p x))
-                        (force (vl-module-p mod))
-                        (force (vl-modulelist-p mods))
-                        (force (equal modalist (vl-modalist mods))))
-                   (vl-stmtlist-p (mv-nth 1 (vl-stmtlist-follow-hids x mod mods modalist
-                                                                   toplev warnings))))
-          :name vl-stmtlist-p-of-vl-stmtlist-follow-hids)
-    :hints(("Goal"
-            :induct (vl-flag-stmt-follow-hids flag x mod mods modalist toplev warnings)
-            :expand ((vl-stmt-follow-hids x mod mods modalist toplev warnings)
-                     (vl-stmtlist-follow-hids x mod mods modalist toplev warnings)))))
-
-  (verify-guards vl-stmt-follow-hids))
+   ///
+   (verify-guards vl-stmt-follow-hids))
 
 (def-vl-follow-hids vl-always-follow-hids
   :type vl-always-p
@@ -1219,49 +1137,28 @@ identifier.</p>"
 
 
 
-(defsection vl-module-follow-hids
-
-  (defund vl-module-follow-hids (x mods modalist toplev)
-    (declare (xargs :guard (and (vl-module-p x)
-                                (vl-modulelist-p mods)
-                                (equal modalist (vl-modalist mods))
-                                (equal toplev (vl-modulelist-toplevel mods)))))
-    (b* (((when (vl-module->hands-offp x))
-          x)
-         (warnings (vl-module->warnings x))
-         ((mv warnings assigns)
-          (vl-assignlist-follow-hids (vl-module->assigns x) x mods modalist toplev warnings))
-         ((mv warnings modinsts)
-          (vl-modinstlist-follow-hids (vl-module->modinsts x) x mods modalist toplev warnings))
-         ((mv warnings gateinsts)
-          (vl-gateinstlist-follow-hids (vl-module->gateinsts x) x mods modalist toplev warnings))
-         ((mv warnings alwayses)
-          (vl-alwayslist-follow-hids (vl-module->alwayses x) x mods modalist toplev warnings))
-         ((mv warnings initials)
-          (vl-initiallist-follow-hids (vl-module->initials x) x mods modalist toplev warnings)))
-        (change-vl-module x
-                          :assigns assigns
-                          :modinsts modinsts
-                          :gateinsts gateinsts
-                          :alwayses alwayses
-                          :initials initials
-                          :warnings warnings)))
-
-  (local (in-theory (enable vl-module-follow-hids)))
-
-  (defthm vl-module-p-of-vl-module-follow-hids
-    (implies (and (force (vl-module-p x))
-                  (force (vl-modulelist-p mods))
-                  (force (equal modalist (vl-modalist mods)))
-                  (force (equal toplev (vl-modulelist-toplevel mods))))
-             (vl-module-p (vl-module-follow-hids x mods modalist toplev))))
-
-  (defthm vl-module->name-of-vl-module-follow-hids
-    (equal (vl-module->name (vl-module-follow-hids x mods modalist toplev))
-           (vl-module->name x))))
-
-
-
+(define vl-module-follow-hids
+  ((x        vl-module-p)
+   (mods     vl-modulelist-p)
+   (modalist (equal modalist (vl-modalist mods)))
+   (toplev   (equal toplev (vl-modulelist-toplevel mods))))
+  :returns (new-x vl-module-p :hyp :fguard)
+  (b* (((when (vl-module->hands-offp x))
+        x)
+       ((vl-module x) x)
+       (warnings (vl-module->warnings x))
+       ((mv warnings assigns)   (vl-assignlist-follow-hids   x.assigns   x mods modalist toplev warnings))
+       ((mv warnings modinsts)  (vl-modinstlist-follow-hids  x.modinsts  x mods modalist toplev warnings))
+       ((mv warnings gateinsts) (vl-gateinstlist-follow-hids x.gateinsts x mods modalist toplev warnings))
+       ((mv warnings alwayses)  (vl-alwayslist-follow-hids   x.alwayses  x mods modalist toplev warnings))
+       ((mv warnings initials)  (vl-initiallist-follow-hids  x.initials  x mods modalist toplev warnings)))
+    (change-vl-module x
+                      :assigns   assigns
+                      :modinsts  modinsts
+                      :gateinsts gateinsts
+                      :alwayses  alwayses
+                      :initials  initials
+                      :warnings  warnings)))
 
 (defprojection vl-modulelist-follow-hids-aux (x mods modalist toplev)
   (vl-module-follow-hids x mods modalist toplev)
@@ -1269,31 +1166,22 @@ identifier.</p>"
               (vl-modulelist-p mods)
               (equal modalist (vl-modalist mods))
               (equal toplev (vl-modulelist-toplevel mods)))
-  :result-type vl-modulelist-p
-  :rest
-  ((defthm vl-modulelist->names-of-vl-modulelist-follow-hids-aux
-     (let ((ret (vl-modulelist-follow-hids-aux x mods modalist toplev)))
-       (equal (vl-modulelist->names ret)
-              (vl-modulelist->names x))))))
+  :result-type vl-modulelist-p)
 
+(define vl-modulelist-follow-hids ((x vl-modulelist-p))
+  :returns (new-x vl-modulelist-p :hyp :fguard)
+  (declare (xargs :guard (vl-modulelist-p x)))
+  (b* ((modalist (vl-modalist x))
+       (toplev   (vl-modulelist-toplevel x))
+       (x-prime  (vl-modulelist-follow-hids-aux x x modalist toplev)))
+    (fast-alist-free modalist)
+    x-prime))
 
-(defsection vl-modulelist-follow-hids
-
-  (defund vl-modulelist-follow-hids (x)
-    (declare (xargs :guard (vl-modulelist-p x)))
-    (b* ((modalist (vl-modalist x))
-         (toplev   (vl-modulelist-toplevel x))
-         (x-prime  (vl-modulelist-follow-hids-aux x x modalist toplev))
-         (-        (flush-hons-get-hash-table-link modalist)))
-        x-prime))
-
-  (local (in-theory (enable vl-modulelist-follow-hids)))
-
-  (defthm vl-modulelist-p-of-vl-modulelist-follow-hids
-    (implies (force (vl-modulelist-p x))
-             (vl-modulelist-p (vl-modulelist-follow-hids x))))
-
-  (defthm vl-modulelist->names-of-vl-modulelist-follow-hids
-    (equal (vl-modulelist->names (vl-modulelist-follow-hids x))
-           (vl-modulelist->names x))))
+(define vl-design-follow-hids
+  :parents (hid-elim)
+  :short "Top-level @('follow-hids') phase of the @(see hid-elim) transform."
+  ((x vl-design-p))
+  :returns (new-x vl-design-p)
+  (b* (((vl-design x) x))
+    (change-vl-design x :mods (vl-modulelist-follow-hids x.mods))))
 

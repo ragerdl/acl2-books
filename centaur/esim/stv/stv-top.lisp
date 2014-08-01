@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 
 
 ; stv-top.lisp -- symbolic test vectors for esim
@@ -914,3 +924,80 @@ irrelevant inputs are removed.</p>"
              ;; bozo ugly, but workable enough...
              (stv-easy-bindings-inside-mix unbound stv)))))
 
+
+(defxdoc symbolic-test-vector-composition
+  :parents (symbolic-test-vectors)
+  :short "Strategy for performing compositional proofs involving stv's"
+
+  :long "<p>It is common to use @(see gl) to perform proofs about small and
+  moderately-sized circuits.  However, performing proofs about large circuits
+  typically involves first breaking the circuit into smaller parts, and then
+  showing that the sum of the parts is equivalent to the original whole
+  circuit.  We call this proof a <it>compositional equivalence proof.</it></p>
+
+  <p>Currently the most thorough example of such a proof can be found in the book
+  @('centaur/tutorial/boothmul.lisp').  This example highlights two ways of
+  performing a compositional equivalence proof:</p>
+
+  <ol>
+    <li>By using @(see gl)</li>
+    <li>By using rewriting</li>
+  </ol>
+
+  <p>The advantage of using @(see gl) is that it is automatic.  The
+  disadvantage is that once one is working on very large circuits, the
+  underlying BDDs or SAT solvers are unlikely to complete.  This is because the
+  compositional proof relies upon the fact that every relevant intermediate
+  value should be a @(see natp) (as opposed to @('X').  This turns out to be a
+  very time-consuming proof obligation!</p>
+
+  <p>An alternative to GL that uses rewriting has been developed.  It involves
+  using book @('centaur/esim/stv/stv-decomp-proofs').  We recommend looking at
+  the boothmul example mentioned above but offer additional points of
+  clarification for anyone striving to use this book:</p>
+
+  <ul>
+
+    <li><p>You will need to enable the @('stv-decomp-theory').  Thus, the
+    user's hints for the composition proof will look something like:</p>
+
+@({
+ :use ((:instance phase-1-types)
+       (:instance phase-2-types))
+ :in-theory (stv-decomp-theory)
+})
+
+    </li>
+
+    <li><p>At one point the book only worked when the stv's used their autoins
+    macro (see @(see defstv)) for finding the inputs.  We think this is no
+    longer the case, but it is something to keep in mind when debugging the
+    failures of your proofs.</p></li>
+
+    <li><p>The user absolutely must prove and @(':use') a lemma that says the
+    relevant intermediate values are @('natp')s.  If the user fails to do this,
+    they will likely get an error message that looks like the following.  Note
+    that the user can still obtain a \"not equivalent\" error for other
+    reasons, which must be debugged by the user.</p>
+
+@({
+ HARD ACL2 ERROR in STV-DECOMP-4V-ENV-EQUIV-META:  Not equivalent
+
+ A-alist:
+ ((WIRENAME[0] CAR (IF (EQUAL (4V-TO-NAT #) 'X) '(X X X X X ...) (IF (IF # #
+ #) (BOOL-TO-4V-LST #) '#))) (WIRENAME[10] CAR (CDR (CDR (CDR
+ #)))) (WIRENAME[11] CAR (CDR (CDR (CDR #)))) (WIRENAME[12] CAR (CDR (CDR (CDR
+ #)))) (WIRENAME[13] CAR (CDR (CDR (CDR #)))) ...)
+ B-alist:
+ ((WIRENAME[0] BOOL-TO-4V (LOGBITP '0 WIRENAME)) (WIRENAME[10] BOOL-TO-4V
+ (LOGBITP '10 WIRENAME)) (WIRENAME[11] BOOL-TO-4V (LOGBITP '11 WIRENAME))
+ (WIRENAME[12] BOOL-TO-4V (LOGBITP '12 WIRENAME)) (WIRENAME[13] BOOL-TO-4V
+ (LOGBITP '13 WIRENAME)) ...)
+})
+    </li>
+  </ul>
+
+  <p>The stv-decomp-proofs book is experimental and not as robust as many of
+  the other features provided in the ACL2 books.  Please send inquiries to the
+  acl2-books project.</p>
+")

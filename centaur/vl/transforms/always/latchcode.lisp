@@ -1,20 +1,30 @@
 ; VL Verilog Toolkit
-; Copyright (C) 2008-2011 Centaur Technology
+; Copyright (C) 2008-2014 Centaur Technology
 ;
 ; Contact:
 ;   Centaur Technology Formal Verification Group
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -24,15 +34,17 @@
 (include-book "../../mlib/delta")
 (local (include-book "../../util/arithmetic"))
 (local (include-book "../../util/osets"))
+(local (in-theory (enable tag-reasoning)))
 
 (defxdoc latchcode
   :parents (transforms)
   :short "Simple pattern matching for recognizing latches."
 
   :long "<p>BOZO eventually we will want to develop something akin to @(see
-flopcode) for dealing with @('always') blocks for latches and combinational
-logic.  But for now our latch recognition is extremely primitive.</p>")
+edgesynth) for dealing with @('always') blocks for latches, but for now our
+latch recognition is extremely primitive.</p>")
 
+(local (xdoc::set-default-parents latchcode))
 
 (define vl-evatom-plain-p ((x vl-evatom-p))
   :returns plainp
@@ -77,7 +89,7 @@ flip-flops.</p>"
                (delay "maybe natp"))
   :parents (vl-match-latch-main)
   :short "Match @('lhs = [#delay] test ? rhs : lhs')."
-  (b* (((unless (vl-fast-assignstmt-p x))
+  (b* (((unless (vl-assignstmt-p x))
         (mv nil nil nil nil))
        ((vl-assignstmt x) x)
        ((unless (or (eq x.type :vl-blocking)
@@ -116,8 +128,8 @@ flip-flops.</p>"
   (b* (((unless (vl-ifstmt-p x))
         (mv nil nil nil nil))
        ((vl-ifstmt x) x)
-       ((unless (and (vl-fast-nullstmt-p x.falsebranch)
-                     (vl-fast-assignstmt-p x.truebranch)))
+       ((unless (and (vl-nullstmt-p x.falsebranch)
+                     (vl-assignstmt-p x.truebranch)))
         (mv nil nil nil nil))
        ((vl-assignstmt ass) x.truebranch)
        ((unless (or (eq ass.type :vl-blocking)
@@ -164,7 +176,6 @@ flip-flops.</p>"
                (rhs  :hyp :fguard (and (equal (vl-expr-p rhs) (if ctrl t nil))
                                        (iff rhs ctrl)))
                (delay "maybe natp"))
-  :parents (latchcode)
   :short "Pattern matcher for @('always') blocks that might be simple latches."
   :long "<p>We match always blocks of two forms.  Note that form1 is generally
 preferable to form2 since @('if') statements behave very badly when @('test')
@@ -227,7 +238,6 @@ Cummings</a> articles about coding styles for non-blocking assignments.</p>"
                          (and (equal (vl-expr-p rhs) (if test t nil))
                               (iff rhs test)))
                (delay "maybe natp"))
-  :parents (latchcode)
   :short "Match @('always') statements that are simple latches, with lots of
 extra sanity checking."
 
@@ -314,7 +324,6 @@ extra sanity checking."
                          (and (equal (vl-expr-p rhs) (if test t nil))
                               (iff rhs test)))
                (delay "maybe natp"))
-  :parents (latchcode)
   :short "Match @('always') statements that are simple latches, with minimal
 sanity checking."
 
@@ -393,23 +402,47 @@ sanity checking."
                 blocks; these are too scary to try to synthesize"
                (and (string-listp scary-regs)
                     (setp scary-regs)))
-   (regs       "all the registers for the module"
-               vl-regdecllist-p)
+   (vars       "all the variables for the module"
+               vl-vardecllist-p)
    (cvtregs    "accumulator for names of registers to convert into nets"
                string-listp)
    (delta      "delta for the new nets, instances, etc."
                vl-delta-p)
    (careful-p  "should we be careful or not?"
-               booleanp))
+               booleanp)
+   vecp)
   :returns (mv (new-x? "nil on success, x unchanged on failure"
                        (equal (vl-always-p new-x?) (if new-x? t nil))
                        :hyp :fguard)
                (cvtregs string-listp :hyp :fguard)
                (delta   vl-delta-p   :hyp :fguard))
-  :parents (latchcode)
   :short "Try to synthesize a single @('always') block into a latch."
 
   (b* (((vl-always x) x)
+
+       ((unless (or (eq x.type :vl-always)
+                    (eq x.type :vl-always-latch)))
+        ;; Don't touch always_comb or always_ff blocks.
+        (mv x cvtregs delta))
+
+       ((when (eq x.type :vl-always-latch))
+        ;; BOZO.  For now we do not try to really support always_latch.  To
+        ;; support always_latch we will need to adjust our pattern matching
+        ;; stuff because the always_latch drops the timing statement.  That
+        ;; is, you write something like:
+        ;;
+        ;;    always_latch if (clk) q <= d;
+        ;;
+        ;; instead of:
+        ;;
+        ;;    always @(clk or d) if (clk) q <= d;
+        ;;
+        ;; So our pattern-matching stuff isn't right for always_latch yet.
+        (mv x cvtregs
+            (dwarn :type :vl-latchcode-fail
+                   :msg "~a0: always_latch blocks are not yet implemented."
+                   :args (list x))))
+
        (warnings (vl-delta->warnings delta))
 
        ((mv warnings test lhs rhs delay)
@@ -430,7 +463,7 @@ sanity checking."
                    :msg "~a0: not synthesize a latch since the lhs doesn't ~
                          even have any names?  lhs: ~a1."
                    :args (list x lhs-names))))
-       (warning   (vl-always-check-regs lhs-names regs x))
+       (warning   (vl-always-check-regs lhs-names vars x))
        ((when warning)
         (mv x cvtregs (vl-warn-delta warning)))
        (lhs-scary (intersect lhs-names scary-regs))
@@ -480,6 +513,21 @@ sanity checking."
         (car lhs-names))
 
        ((mv inst-name nf)    (vl-namefactory-plain-name (cat lhs-name "_latch")   delta.nf))
+
+       ((when vecp)
+        ;; everything is inside the latch instance, no extra delay outside
+        (b* ((addmods (vl-make-n-bit-latch-vec width (or delay 0)))
+             (latchmod (car addmods))
+             (inst (vl-simple-instantiate latchmod inst-name
+                                          (list lhs test rhs)
+                                          :loc x.loc))
+             (delta (change-vl-delta delta
+                                     :nf       nf
+                                     :modinsts (cons inst delta.modinsts)
+                                     :addmods  (append-without-guard addmods
+                                                                     delta.addmods))))
+          (mv nil (append lhs-names cvtregs) delta)))
+
        ((mv next-name nf)    (vl-namefactory-plain-name (cat lhs-name "_next")    nf))
        ((mv delfree-name nf) (vl-namefactory-plain-name (cat lhs-name "_delfree") nf))
 
@@ -534,22 +582,22 @@ sanity checking."
 (define vl-latchcode-synth-alwayses ((x          vl-alwayslist-p)
                                      (scary-regs (and (string-listp scary-regs)
                                                       (setp scary-regs)))
-                                     (regs       vl-regdecllist-p)
+                                     (vars       vl-vardecllist-p)
                                      (cvtregs    string-listp)
                                      (delta      vl-delta-p)
-                                     (careful-p  booleanp))
+                                     (careful-p  booleanp)
+                                     vecp)
   :returns (mv (new-x   vl-alwayslist-p :hyp :fguard)
                (cvtregs string-listp :hyp :fguard)
                (delta   vl-delta-p   :hyp :fguard))
-  :parents (latchcode)
   (b* (((when (atom x))
         (mv nil cvtregs delta))
        ((mv new-car? cvtregs delta)
-        (vl-latchcode-synth-always (car x) scary-regs regs
-                                   cvtregs delta careful-p))
+        (vl-latchcode-synth-always (car x) scary-regs vars
+                                   cvtregs delta careful-p vecp))
        ((mv new-cdr cvtregs delta)
-        (vl-latchcode-synth-alwayses (cdr x) scary-regs regs
-                                     cvtregs delta careful-p))
+        (vl-latchcode-synth-alwayses (cdr x) scary-regs vars
+                                     cvtregs delta careful-p vecp))
        (new-x (if new-car?
                   (cons new-car? new-cdr)
                 new-cdr)))

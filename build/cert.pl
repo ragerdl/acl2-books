@@ -1,34 +1,34 @@
 #!/usr/bin/env perl
 
-######################################################################
-## NOTE.  This file is not part of the standard ACL2 books build
-## process; it is part of an experimental build system that is not yet
-## intended, for example, to be capable of running the whole
-## regression.  The ACL2 developers do not maintain this file.
-##
-## Please contact Sol Swords <sswords@cs.utexas.edu> with any
-## questions/comments.
-######################################################################
-
-# Copyright 2008 by Sol Swords.
-
-
-
-#; This program is free software; you can redistribute it and/or modify
-#; it under the terms of the GNU General Public License as published by
-#; the Free Software Foundation; either version 2 of the License, or
-#; (at your option) any later version.
-
-#; This program is distributed in the hope that it will be useful,
-#; but WITHOUT ANY WARRANTY; without even the implied warranty of
-#; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#; GNU General Public License for more details.
-
-#; You should have received a copy of the GNU General Public License
-#; along with this program; if not, write to the Free Software
-#; Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-
-
+# cert.pl build system
+# Copyright (C) 2008-2014 Centaur Technology
+#
+# Contact:
+#   Centaur Technology Formal Verification Group
+#   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
+#   http://www.centtech.com/
+#
+# License: (An MIT/X11-style license)
+#
+#   Permission is hereby granted, free of charge, to any person obtaining a
+#   copy of this software and associated documentation files (the "Software"),
+#   to deal in the Software without restriction, including without limitation
+#   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+#   and/or sell copies of the Software, and to permit persons to whom the
+#   Software is furnished to do so, subject to the following conditions:
+#
+#   The above copyright notice and this permission notice shall be included in
+#   all copies or substantial portions of the Software.
+#
+#   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+#   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+#   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+#   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+#   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+#   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+#   DEALINGS IN THE SOFTWARE.
+#
+# Original author: Sol Swords <sswords@centtech.com>
 
 # This script scans for dependencies of some ACL2 .cert files.
 # Run "perl cert.pl -h" for usage.
@@ -105,6 +105,8 @@ if ($bin_dir) {
     $bin_dir = $cbin_dir;
 }
 
+my $write_sources=0;
+my $write_certs=0;
 
 $base_path = abs_canonical_path(".");
 
@@ -406,6 +408,11 @@ COMMAND LINE OPTIONS
           events.  File modification times are used to determine when
           the cached information about a file must be updated.
 
+   --write-sources <filename>
+          Dump the list of all source files, one per line, into filename.
+
+   --write-certs <filename>
+          Dump the list of all cert files, one per line, into filename.
 ';
 
 GetOptions ("help|h"               => sub { print $summary_str;
@@ -476,6 +483,8 @@ GetOptions ("help|h"               => sub { print $summary_str;
 	    "accept-cache"         => \$certlib_opts{"believe_cache"},
 	    "deps-of|p=s"          => sub { shift; push(@user_targets, "-p " . shift); },
 	    "params=s"             => \$params_file,
+            "write-certs=s"        => \$write_certs,
+            "write-sources=s"        => \$write_sources,
 	    "<>"                   => sub { push(@user_targets, shift); },
 	    );
 
@@ -899,15 +908,37 @@ unless ($no_makefile) {
     close($mf);
 
     unless ($no_build) {
-	my $make_cmd = join(' ', (("$make -j $jobs -f $mf_name"
-				   . ($keep_going ? " -k" : "")),
-				  @make_args));
+	my $make_cmd = join(' ', ("$make -j $jobs -f $mf_name",
+				  ($keep_going ? " -k" : ""),
+				  @make_args,
+				  @targets));
+	print "$make_cmd\n";
 	if ($certlib_opts{"debugging"}) {
 	    print "$make_cmd\n";
 	}
 	exec $make_cmd;
     }
 }
+
+if ($write_sources) {
+    open (my $sourcesfile, ">", $write_sources)
+	or die "Failed to open output file $write_sources\n";
+    foreach my $source (@sources) {
+	print $sourcesfile "${source}\n";
+    }
+    close($sourcesfile);
+}
+
+if ($write_certs) {
+    open (my $certsfile, ">", $write_certs)
+	or die "Failed to open output file $write_certs\n";
+    foreach my $cert (@certs) {
+	print $certsfile "${cert}\n";
+    }
+    close($certsfile);
+}
+
+
 
 # print_times_seen();
 

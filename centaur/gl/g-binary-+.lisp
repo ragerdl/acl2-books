@@ -6,25 +6,35 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Sol Swords <sswords@centtech.com>
 
 (in-package "GL")
 (include-book "g-if")
 (include-book "g-primitives-help")
-(include-book "symbolic-arithmetic-fns")
+(include-book "symbolic-arithmetic")
 (include-book "eval-g-base")
 ;(include-book "tools/with-arith5-help" :dir :system)
-(local (include-book "symbolic-arithmetic"))
+
 (local (include-book "eval-g-base-help"))
 (local (include-book "hyp-fix"))
 (local (include-book "clause-processors/just-expand" :dir :system))
@@ -45,7 +55,9 @@
              (equal yid '(t)))
         (let* ((rsum (bfr-+-ss nil xrn yrn))
                (isum (bfr-+-ss nil xin yin)))
-          (mk-g-number rsum 1 isum))
+          (mk-g-number (rlist-fix rsum)
+                       1
+                       (rlist-fix isum)))
       (g-apply 'binary-+ (gl-list x y)))))
 
 (in-theory (disable (g-binary-+-of-numbers)))
@@ -145,7 +157,7 @@
   `(("goal" :in-theory (e/d* (general-concretep-atom
                               (:ruleset general-object-possibilities))
                              ((:definition ,gfn)
-                              i2v n2v bfr-+-ss
+                              i2v n2v
                               general-numberp-eval-to-numberp
                               general-boolean-value-correct
                               bool-cond-itep-eval
@@ -185,7 +197,9 @@
              (equal yid '(t)))
         (let* ((rsum (bfr-+-ss t xrn (bfr-lognot-s yrn)))
                (isum (bfr-+-ss t xin (bfr-lognot-s yin))))
-          (mk-g-number rsum 1 isum))
+          (mk-g-number (rlist-fix rsum)
+                       1
+                       (rlist-fix isum)))
       (g-apply 'binary-- (gl-list x y)))))
 
 (in-theory (disable (g-binary---of-numbers)))
@@ -314,7 +328,7 @@
   `(("goal" :in-theory (e/d* (general-concretep-atom
                               (:ruleset general-object-possibilities))
                              ((:definition ,gfn)
-                              i2v n2v bfr-+-ss
+                              i2v n2v
                               general-numberp-eval-to-numberp
                               general-boolean-value-correct
                               bool-cond-itep-eval

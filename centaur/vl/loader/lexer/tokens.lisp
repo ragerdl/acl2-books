@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -129,7 +139,7 @@ SystemVerilog 2012 source code."
             :vl-shreq      ;;; >>=
             :vl-ashleq     ;;; <<<=
             :vl-ashreq     ;;; >>>=
-            :vl-assignpat  ;;; '{
+            :vl-quote      ;;; '
             :vl-$          ;;; $
             :vl-$root      ;;; $root
             :vl-$unit      ;;; $unit
@@ -235,10 +245,8 @@ we're ever actually running @(see vl-tokenlist-p).</p>"
 
   ((type  vl-plaintokentype-p
           "A keyword symbol that identifies what kind of token this is.
-           There are many valid types for plain tokens: @(`(len
-           *vl-list-of-keywords*)`) keyword tokens and another @(`(len
-           *vl-plain-nonkeyword-types*)`) other, non-keyword kinds of plain
-           tokens, such as whitespace, comments, operators, and punctuation.")
+           There are many valid types for plain tokens, including
+           @(see lex-keywords) and other kinds of nonkeyword tokens.")
 
    (etext (and (vl-echarlist-p etext)
                (consp etext)
@@ -255,7 +263,7 @@ of token they are and which characters formed them.</p>
 <p>Subtle.  As an optimization, our plaintokens are tagless aggregates, and the
 particular ordering of the fields ensures that the type of the plaintoken is
 simply its @('car').  We exploit this in the executable versions of functions
-like @(see vl-token->text) and @(see vl-token->etext).</p>"
+like @(see vl-token->etext).</p>"
 
   ///
   (defrule type-of-vl-plaintoken->type

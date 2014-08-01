@@ -1,30 +1,43 @@
 ; VL Verilog Toolkit
-; Copyright (C) 2008-2011 Centaur Technology
+; Copyright (C) 2008-2014 Centaur Technology
 ;
 ; Contact:
 ;   Centaur Technology Formal Verification Group
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
 (in-package "VL")
 (include-book "namefactory")
 (local (include-book "../util/arithmetic"))
+(local (std::add-default-post-define-hook :fix))
 
-(defaggregate vl-delta
+(defprod vl-delta
   :parents (transforms)
   :short "A set of changes to be made to a module."
+  :tag nil
+  :layout :tree
   ((nf        vl-namefactory-p)
    (netdecls  vl-netdecllist-p)
    (assigns   vl-assignlist-p)
@@ -32,9 +45,6 @@
    (gateinsts vl-gateinstlist-p)
    (warnings  vl-warninglist-p)
    (addmods   vl-modulelist-p))
-  :tag nil
-  :legiblep nil
-
   :long "<p>An @(see vl-delta-p) is mostly just a bunch of accumulators of
 different types, which may be useful when writing a transform that makes
 updates to a module.  It also has a @(see vl-namefactory-p) which can be used
@@ -75,22 +85,22 @@ code for transforms like @(see split).</p>
 <p>We found it useful to add a @(see vl-namefactory-p) to the delta, since that
 way any transform that wants to generate fresh names can do so easily.</p>")
 
-(define vl-warn-delta ((warning vl-warning-p)
-                       &key
-                       ((delta vl-delta-p) 'delta))
-  :returns (delta vl-delta-p :hyp :fguard)
-  :parents (vl-delta-p)
+(local (xdoc::set-default-parents vl-delta-p))
+
+(define vl-warn-delta
   :short "Add a warning to a delta."
+  ((warning vl-warning-p) &key ((delta vl-delta-p) 'delta))
+  :returns (delta vl-delta-p)
   :long "<p>Usually you will want to use @(see dwarn) instead because it allows
 you to construct the warning inline.  But, occasionally, the warning to add has
 already been constructed, in which case @('vl-warn-delta') is what you
 want.</p>"
   (change-vl-delta delta
-                   :warnings (cons warning (vl-delta->warnings delta))))
+                   :warnings (cons (vl-warning-fix warning)
+                                   (vl-delta->warnings delta))))
 
 
 (defsection dwarn
-  :parents (vl-delta-p)
   :short "Make a @(see vl-warning-p) and add it to a @(see vl-delta-p)."
   :long "<p>This is just a convenient shorthand.</p>
 
@@ -110,18 +120,14 @@ that your @(see vl-delta-p) is called @('delta').</p>"
                                      :fn     ,fn)
                     :delta ,delta)))
 
-(define vl-starting-delta ((x vl-module-p))
+(define vl-starting-delta
+  :short "Build an initial @(see vl-delta-p) for the module @('x')."
+ ((x vl-module-p))
   :returns delta
-  :parents (vl-delta-p)
-  :short "@(call vl-starting-delta) builds a fresh @(see vl-delta-p) for the
-module @('x')."
-
   :long "<p>The new delta has an appropriate starting namefactory for the
 module, and is also seeded with the module's @(see warnings).  The other
 accumulators are all empty to begin with.</p>"
-
   :enabled t
-
   (make-vl-delta :nf       (vl-starting-namefactory x)
                  :warnings (vl-module->warnings x)
                  :netdecls nil
@@ -130,14 +136,13 @@ accumulators are all empty to begin with.</p>"
                  :addmods  nil))
 
 
-(define vl-free-delta ((delta vl-delta-p))
-  :returns delta
-  :parents (vl-delta-p)
-  :short "@(call vl-free-delta) frees the namefactory within a @(see
-vl-delta-p) and returns @('delta')."
+(define vl-free-delta
+  :short "Frees the namefactory within a @(see vl-delta-p) and returns
+@('delta')."
+ ((delta vl-delta-p))
+  :returns (delta vl-delta-p)
   :enabled t
-
   (b* (((vl-delta delta) delta))
     (vl-free-namefactory delta.nf)
-    delta))
+    (vl-delta-fix delta)))
 

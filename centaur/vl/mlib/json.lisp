@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -32,7 +42,7 @@ href='http://www.json.org/'>JSON</a> format."
 
   :long "<p>This is a collection of printing routines for translating ACL2
 structures into JSON format.  These routines are mainly meant to make it easy
-to convert @(see vl) @(see modules) into nice JSON data, but are somewhat
+to convert @(see vl) @(see syntax) into nice JSON data, but are somewhat
 flexible and may be useful for other applications.</p>")
 
 
@@ -345,6 +355,15 @@ encoding.</p>"
                      `(vl-println? ", "))
                    (encoder-alist-main-actions basename (cdr alist) newlines))))))
 
+
+(define convert-flexprod-fields-into-eformals ((x "list of fty::flexprod-fields"))
+  (b* (((when (atom x))
+        nil)
+       ((fty::flexprod-field x1) (car x)))
+    (cons (std::make-formal :name x1.name
+                            :guard (list x1.type x1.name))
+          (convert-flexprod-fields-into-eformals (cdr x)))))
+
 (define def-vl-jp-aggregate-fn (type omit overrides long newlines world)
   (b* ((mksym-package-symbol 'vl::foo)
        (elem-print     (mksym 'vl-jp- type))
@@ -352,11 +371,29 @@ encoding.</p>"
        (elem-p         (mksym 'vl- type '-p))
        (elem-p-str     (symbol-name elem-p))
 
-       ((std::agginfo agg) (std::get-aggregate elem world))
-       ((unless (std::formallist-p agg.efields))
+       ((mv tag efields)
+        (b* ((agginfo (std::get-aggregate elem world))
+             ((when agginfo)
+              (cw "Found info for defaggregate ~x0.~%" type)
+              (mv (std::agginfo->tag agginfo)
+                  (std::agginfo->efields agginfo)))
+             (prodinfo (fty::get-flexprod-info elem world))
+             ((unless prodinfo)
+              (mv (raise "Type ~x0 doesn't look like a known defaggregate/defprod?~%" type)
+                  nil))
+             ((fty::prodinfo prodinfo) prodinfo)
+             (efields (convert-flexprod-fields-into-eformals
+                       (fty::flexprod->fields prodinfo.prod)))
+             (tag (fty::prodinfo->tag prodinfo)))
+          (mv tag efields)))
+
+       (- (cw "Inferred tag ~x0.~%" tag))
+       (- (cw "Inferred fields ~x0.~%" efields))
+
+       ((unless (std::formallist-p efields))
         (raise "Expected :efields for ~x0 to be a valid formallist, found ~x1."
-               elem agg.efields))
-       (enc-alist (make-json-encoder-alist agg.efields omit overrides world))
+               elem efields))
+       (enc-alist (make-json-encoder-alist efields omit overrides world))
        ((unless (consp enc-alist))
         (raise "Expected at least one field to encode."))
        (main      (encoder-alist-main-actions elem enc-alist newlines)))
@@ -368,7 +405,7 @@ encoding.</p>"
        :long ,long
        (vl-ps-seq
         (vl-print "{\"tag\": ")
-        (jp-sym ,agg.tag)
+        (jp-sym ',tag)
         ,(if newlines
              `(vl-ps-seq (vl-println ", ")
                          (vl-indent ,newlines))
@@ -474,6 +511,11 @@ encoding.</p>"
   :inline t
   (jp-sym x))
 
+(define vl-jp-casecheck ((x vl-casecheck-p) &key (ps 'ps))
+  :parents (json-encoders)
+  :inline t
+  (jp-sym x))
+
 (define vl-jp-casetype ((x vl-casetype-p) &key (ps 'ps))
   :parents (json-encoders)
   :inline t
@@ -489,17 +531,12 @@ encoding.</p>"
   :inline t
   (jp-sym x))
 
-(define vl-jp-vardecltype ((x vl-vardecltype-p) &key (ps 'ps))
-  :parents (json-encoders)
-  :inline t
-  (jp-sym x))
-
 (define vl-jp-paramdecltype ((x vl-paramdecltype-p) &key (ps 'ps))
   :parents (json-encoders)
   :inline t
   (jp-sym x))
 
-(define vl-jp-compoundstmttype ((x vl-compoundstmttype-p) &key (ps 'ps))
+(define vl-jp-alwaystype ((x vl-alwaystype-p) &key (ps 'ps))
   :parents (json-encoders)
   :inline t
   (jp-sym x))
@@ -513,11 +550,11 @@ encoding.</p>"
 (add-json-encoder vl-assign-type-p      vl-jp-assign-type)
 (add-json-encoder vl-deassign-type-p    vl-jp-deassign-type)
 (add-json-encoder vl-casetype-p         vl-jp-casetype)
+(add-json-encoder vl-casecheck-p        vl-jp-casecheck)
 (add-json-encoder vl-netdecltype-p      vl-jp-netdecltype)
 (add-json-encoder vl-taskporttype-p     vl-jp-taskporttype)
-(add-json-encoder vl-vardecltype-p      vl-jp-vardecltype)
 (add-json-encoder vl-paramdecltype-p    vl-jp-paramdecltype)
-(add-json-encoder vl-compoundstmttype-p vl-jp-compoundstmttype)
+(add-json-encoder vl-alwaystype-p       vl-jp-alwaystype)
 
 
 (define vl-jp-maybe-exprtype ((x vl-maybe-exprtype-p) &key (ps 'ps))
@@ -632,87 +669,64 @@ which could not hold such large values.</p>")
 
 (add-json-encoder vl-atomguts-p vl-jp-atomguts)
 
-(def-vl-jp-aggregate atom)
-
-(defsection vl-jp-expr
+(defines vl-jp-expr
   :parents (json-encoders)
 
-  (defmacro vl-jp-expr (x &key (ps 'ps))
-    `(vl-jp-expr-fn ,x ,ps))
+  (define vl-jp-expr ((x vl-expr-p) &key (ps 'ps))
+    :measure (two-nats-measure (vl-expr-count x) 0)
+    (vl-expr-case x
+      :atom
+      (jp-object :tag (jp-sym :atom)
+                 :guts (vl-jp-atomguts x.guts)
+                 :finalwidth (jp-maybe-nat x.finalwidth)
+                 :finaltype (vl-jp-maybe-exprtype x.finaltype))
+      :nonatom
+      (jp-object :tag        (jp-sym :nonatom)
+                 :atts       (vl-jp-atts x.atts)
+                 :args       (vl-jp-exprlist x.args)
+                 :finalwidth (jp-maybe-nat x.finalwidth)
+                 :finaltype  (vl-jp-maybe-exprtype x.finaltype))))
 
-  (defmacro vl-jp-atts (x &key (ps 'ps))
-    `(vl-jp-atts-fn ,x ,ps))
+  (define vl-jp-atts ((x vl-atts-p) &key (ps 'ps))
+    :measure (two-nats-measure (vl-atts-count x) 1)
+    ;; Atts are a string->maybe-expr alist, so turn them into a JSON object
+    ;; binding keys to values...
+    (vl-ps-seq (vl-print "{")
+               (vl-jp-atts-aux x)
+               (vl-println? "}")))
 
-  (defmacro vl-jp-atts-aux (x &key (ps 'ps))
-    `(vl-jp-atts-aux-fn ,x ,ps))
+  (define vl-jp-atts-aux ((x vl-atts-p) &key (ps 'ps))
+    :measure (two-nats-measure (vl-atts-count x) 0)
+    (b* ((x (vl-atts-fix x))
+         ((when (atom x))
+          ps)
+         ((cons name1 val1) (car x)))
+      (vl-ps-seq (jp-str name1)
+                 (vl-print ": ")
+                 (if val1
+                     (vl-jp-expr val1)
+                   (vl-print "null"))
+                 (if (atom (cdr x))
+                     ps
+                   (vl-println? ", "))
+                 (vl-jp-atts-aux (cdr x)))))
 
-  (defmacro vl-jp-exprlist (x &key (ps 'ps))
-    `(vl-jp-exprlist-fn ,x ,ps))
+  (define vl-jp-exprlist ((x vl-exprlist-p) &key (ps 'ps))
+    ;; Print the expressions as a JSON array with brackets.
+    :measure (two-nats-measure (vl-exprlist-count x) 1)
+    (vl-ps-seq (vl-print "[")
+               (vl-jp-exprlist-aux x)
+               (vl-println? "]")))
 
-  (defmacro vl-jp-exprlist-aux (x &key (ps 'ps))
-    `(vl-jp-exprlist-aux-fn ,x ,ps))
-
-  (mutual-recursion
-   (defund vl-jp-expr-fn (x ps)
-     (declare (xargs :guard (vl-expr-p x)
-                     :stobjs ps
-                     :measure (two-nats-measure (acl2-count x) 2)))
-     (b* (((when (vl-fast-atom-p x))
-           (vl-jp-atom x))
-          ((vl-nonatom x) x))
-       (jp-object :tag        (jp-sym :vl-nonatom)
-                  :atts       (vl-jp-atts x.atts)
-                  :args       (vl-jp-exprlist x.args)
-                  :finalwidth (jp-maybe-nat x.finalwidth)
-                  :finaltype  (vl-jp-maybe-exprtype x.finaltype))))
-
-   (defund vl-jp-atts-fn (x ps)
-     ;; Atts are a string->maybe-expr alist, so turn them into a JSON object
-     ;; binding keys to values...
-     (declare (xargs :guard (vl-atts-p x)
-                     :stobjs ps
-                     :measure (two-nats-measure (acl2-count x) 1)))
-     (vl-ps-seq (vl-print "{")
-                (vl-jp-atts-aux x)
-                (vl-println? "}")))
-
-   (defund vl-jp-atts-aux-fn (x ps)
-     (declare (xargs :guard (vl-atts-p x)
-                     :stobjs ps
-                     :measure (two-nats-measure (acl2-count x) 0)))
-     (b* (((when (atom x))
-           ps)
-          ((cons name1 val1) (car x)))
-       (vl-ps-seq (jp-str name1)
-                  (vl-print ": ")
-                  (if val1
-                      (vl-jp-expr val1)
-                    (vl-print "null"))
-                  (if (atom (cdr x))
-                      ps
-                    (vl-println? ", "))
-                  (vl-jp-atts-aux (cdr x)))))
-
-   (defund vl-jp-exprlist-fn (x ps)
-     ;; Print the expressions as a JSON array with brackets.
-     (declare (xargs :guard (vl-exprlist-p x)
-                     :stobjs ps
-                     :measure (two-nats-measure (acl2-count x) 1)))
-     (vl-ps-seq (vl-print "[")
-                (vl-jp-exprlist-aux x)
-                (vl-println? "]")))
-
-   (defund vl-jp-exprlist-aux-fn (x ps)
-     (declare (xargs :guard (vl-exprlist-p x)
-                     :stobjs ps
-                     :measure (two-nats-measure (acl2-count x) 0)))
-     (b* (((when (atom x))
-           ps))
-       (vl-ps-seq (vl-jp-expr (car x))
-                  (if (atom (cdr x))
-                      ps
-                    (vl-println? ", "))
-                  (vl-jp-exprlist-aux (cdr x)))))))
+  (define vl-jp-exprlist-aux ((x vl-exprlist-p) &key (ps 'ps))
+    :measure (two-nats-measure (vl-exprlist-count x) 0)
+    (b* (((when (atom x))
+          ps))
+      (vl-ps-seq (vl-jp-expr (car x))
+                 (if (atom (cdr x))
+                     ps
+                   (vl-println? ", "))
+                 (vl-jp-exprlist-aux (cdr x))))))
 
 (define vl-jp-maybe-expr ((x vl-maybe-expr-p) &key (ps 'ps))
   (if x
@@ -751,20 +765,130 @@ which could not hold such large values.</p>")
 (def-vl-jp-aggregate netdecl)
 (def-vl-jp-list netdecl :newlines 4)
 
-(def-vl-jp-aggregate regdecl)
-(def-vl-jp-list regdecl :newlines 4)
-
 (def-vl-jp-aggregate plainarg)
 (def-vl-jp-list plainarg :newlines 4)
 
 (def-vl-jp-aggregate namedarg)
 (def-vl-jp-list namedarg :newlines 4)
 
+
+
+(define vl-jp-lifetime ((x vl-lifetime-p) &key (ps 'ps))
+  :parents (json-encoders)
+  :inline t
+  (jp-sym x))
+
+(define vl-jp-randomqualifier ((x vl-randomqualifier-p) &key (ps 'ps))
+  :parents (json-encoders)
+  :inline t
+  (jp-sym x))
+
+(define vl-jp-coretypename ((x vl-coretypename-p) &key (ps 'ps))
+  :parents (json-encoders)
+  :inline t
+  (jp-sym x))
+
+(add-json-encoder vl-lifetime-p         vl-jp-lifetime)
+(add-json-encoder vl-randomqualifier-p  vl-jp-randomqualifier)
+(add-json-encoder vl-coretypename-p     vl-jp-coretypename)
+
+(define vl-jp-packeddimension ((x vl-packeddimension-p) &key (ps 'ps))
+  :parents (json-encoders)
+  (if (eq x :vl-unsized-dimension)
+      (jp-sym x)
+    (vl-jp-range x)))
+
+(add-json-encoder vl-packeddimension-p vl-jp-packeddimension)
+(def-vl-jp-list packeddimension)
+
+(define vl-jp-maybe-packeddimension ((x vl-maybe-packeddimension-p) &key (ps 'ps))
+  :parents (json-encoders)
+  (if x
+      (vl-jp-packeddimension x)
+    (vl-print "null")))
+
+(add-json-encoder vl-maybe-packeddimension-p vl-jp-maybe-packeddimension)
+
+(define vl-jp-enumbasekind ((x vl-enumbasekind-p) &key (ps 'ps))
+  :guard-hints(("Goal" :in-theory (enable vl-enumbasekind-p)))
+  (if (stringp x)
+      (jp-object :tag (jp-sym :user-defined-type)
+                 :name (jp-str x))
+    (jp-sym x)))
+
+(add-json-encoder vl-enumbasekind-p vl-jp-enumbasekind)
+
+(def-vl-jp-aggregate enumbasetype)
+(def-vl-jp-aggregate enumitem)
+(def-vl-jp-list enumitem)
+
+
+(defines vl-jp-datatype
+
+ (define vl-jp-datatype ((x vl-datatype-p) &key (ps 'ps))
+   :measure (two-nats-measure (vl-datatype-count x) 0)
+   (vl-datatype-case x
+     :vl-coretype
+     (jp-object :tag     (jp-sym :vl-coretype)
+                :name    (vl-jp-coretypename x.name)
+                :signedp (jp-bool x.signedp)
+                :dism    (vl-jp-packeddimensionlist x.dims))
+     :vl-struct
+     (jp-object :tag     (jp-sym :vl-struct)
+                :packedp (jp-bool x.packedp)
+                :signedp (jp-bool x.signedp)
+                :dims    (vl-jp-packeddimensionlist x.dims)
+                :members (vl-jp-structmemberlist x.members))
+     :vl-union
+     (jp-object :tag     (jp-sym :vl-union)
+                :packedp (jp-bool x.packedp)
+                :signedp (jp-bool x.signedp)
+                :taggedp (jp-bool x.taggedp)
+                :dims    (vl-jp-packeddimensionlist x.dims)
+                :members (vl-jp-structmemberlist x.members))
+     :vl-enum
+     (jp-object :tag      (jp-sym :vl-enum)
+                :basetype (vl-jp-enumbasetype x.basetype)
+                :items    (vl-jp-enumitemlist x.items)
+                :dims     (vl-jp-packeddimensionlist x.dims))
+     :vl-usertype
+     (jp-object :tag      (jp-sym :vl-usertype)
+                :kind     (vl-jp-expr x.kind)
+                :dims     (vl-jp-packeddimensionlist x.dims))))
+
+ (define vl-jp-structmemberlist ((x vl-structmemberlist-p) &key (ps 'ps))
+   ;; Print the stmtessions as a JSON array with brackets.
+   :measure (two-nats-measure (vl-structmemberlist-count x) 1)
+   (vl-ps-seq (vl-print "[")
+              (vl-jp-structmemberlist-aux x)
+              (vl-println? "]")))
+
+ (define vl-jp-structmemberlist-aux ((x vl-structmemberlist-p) &key (ps 'ps))
+   :measure (two-nats-measure (vl-structmemberlist-count x) 0)
+   (if (atom x)
+       ps
+     (vl-ps-seq (vl-jp-structmember (car x))
+                (if (atom (cdr x))
+                    ps
+                  (vl-println? ", "))
+                (vl-jp-structmemberlist-aux (cdr x)))))
+
+ (define vl-jp-structmember ((x vl-structmember-p) &key (ps 'ps))
+   :measure (two-nats-measure (vl-structmember-count x) 0)
+   (b* (((vl-structmember x) x))
+     (jp-object :tag      (jp-sym :vl-structmember)
+                :atts     (vl-jp-atts x.atts)
+                :rand     (vl-jp-randomqualifier x.rand)
+                :dims     (vl-jp-packeddimensionlist x.dims)
+                :rhs      (vl-jp-maybe-expr x.rhs)
+                :type     (vl-jp-datatype x.type)))))
+
+(add-json-encoder vl-datatype-p vl-jp-datatype)
+(add-json-encoder vl-structmember-p vl-jp-structmember)
+(add-json-encoder vl-structmemberlist-p vl-jp-structmemberlist)
+
 (def-vl-jp-aggregate vardecl)
 (def-vl-jp-list vardecl :newlines 4)
-
-(def-vl-jp-aggregate eventdecl)
-(def-vl-jp-list eventdecl :newlines 4)
 
 (def-vl-jp-aggregate paramdecl)
 (def-vl-jp-list paramdecl :newlines 4)
@@ -772,15 +896,11 @@ which could not hold such large values.</p>")
 (define vl-jp-blockitem ((x vl-blockitem-p) &key (ps 'ps))
   :guard-hints (("Goal" :in-theory (enable vl-blockitem-p)))
   (mbe :logic
-       (cond ((vl-regdecl-p x)    (vl-jp-regdecl x))
-             ((vl-vardecl-p x)    (vl-jp-vardecl x))
-             ((vl-eventdecl-p x)  (vl-jp-eventdecl x))
+       (cond ((vl-vardecl-p x)    (vl-jp-vardecl x))
              (t                   (vl-jp-paramdecl x)))
        :exec
        (case (tag x)
-         (:vl-regdecl   (vl-jp-regdecl x))
          (:vl-vardecl   (vl-jp-vardecl x))
-         (:vl-eventdecl (vl-jp-eventdecl x))
          (otherwise     (vl-jp-paramdecl x)))))
 
 (add-json-encoder vl-blockitem-p vl-jp-blockitem)
@@ -788,12 +908,15 @@ which could not hold such large values.</p>")
 
 (define vl-jp-arguments ((x vl-arguments-p) &key (ps 'ps))
   :parents (json-encoders vl-arguments-p)
-  (b* (((vl-arguments x) x))
+  (vl-arguments-case x
+    :named
     (jp-object :tag    (jp-sym :vl-arguments)
-               :namedp (jp-bool x.namedp)
-               :args   (if x.namedp
-                           (vl-jp-namedarglist x.args)
-                         (vl-jp-plainarglist x.args)))))
+               :namedp (jp-bool t)
+               :args   (vl-jp-namedarglist x.args))
+    :plain
+    (jp-object :tag    (jp-sym :vl-arguments)
+               :namedp (jp-bool nil)
+               :args   (vl-jp-plainarglist x.args))))
 
 (add-json-encoder vl-arguments-p vl-jp-arguments)
 
@@ -836,84 +959,157 @@ which could not hold such large values.</p>")
 
 (add-json-encoder vl-maybe-delayoreventcontrol-p vl-jp-maybe-delayoreventcontrol)
 
-(def-vl-jp-aggregate assignstmt)
-(def-vl-jp-aggregate nullstmt)
-(def-vl-jp-aggregate enablestmt)
-(def-vl-jp-aggregate deassignstmt)
-(def-vl-jp-aggregate disablestmt)
-(def-vl-jp-aggregate eventtriggerstmt)
-
-(define vl-jp-atomicstmt ((x vl-atomicstmt-p) &key (ps 'ps))
-  :guard-hints (("Goal" :in-theory (enable vl-atomicstmt-p)))
-  (mbe :logic
-       (cond ((vl-nullstmt-p x)          (vl-jp-nullstmt x))
-             ((vl-assignstmt-p x)        (vl-jp-assignstmt x))
-             ((vl-deassignstmt-p x)      (vl-jp-deassignstmt x))
-             ((vl-enablestmt-p x)        (vl-jp-enablestmt x))
-             ((vl-disablestmt-p x)       (vl-jp-disablestmt x))
-             (t                          (vl-jp-eventtriggerstmt x)))
-       :exec
-       (case (tag x)
-         (:vl-nullstmt           (vl-jp-nullstmt x))
-         (:vl-assignstmt         (vl-jp-assignstmt x))
-         (:vl-deassignstmt       (vl-jp-deassignstmt x))
-         (:vl-enablestmt         (vl-jp-enablestmt x))
-         (:vl-disablestmt        (vl-jp-disablestmt x))
-         (otherwise              (vl-jp-eventtriggerstmt x)))))
 
 
-(defmacro vl-jp-stmt (x)
-  `(vl-jp-stmt-fn ,x ps))
 
-(defmacro vl-jp-stmtlist (x)
-  `(vl-jp-stmtlist-fn ,x ps))
+(defines vl-jp-stmt
 
-(defmacro vl-jp-stmtlist-aux (x)
-  `(vl-jp-stmtlist-aux-fn ,x ps))
+ (define vl-jp-stmt ((x vl-stmt-p) &key (ps 'ps))
+   :measure (two-nats-measure (vl-stmt-count x) 0)
+   (b* ((kind (vl-stmt-kind x)))
+     (vl-stmt-case x
 
-(mutual-recursion
+       :vl-nullstmt
+       (jp-object :tag (jp-sym kind)
+                  :atts (vl-jp-atts x.atts))
 
- (defund vl-jp-stmt-fn (x ps)
-   (declare (xargs :guard (vl-stmt-p x)
-                   :stobjs ps
-                   :measure (two-nats-measure (acl2-count x) 2)))
-   (b* (((when (vl-fast-atomicstmt-p x))
-         (vl-jp-atomicstmt x))
-        ((vl-compoundstmt x) x))
-     (jp-object :tag         (jp-sym :vl-compoundstmt)
-                :type        (vl-jp-compoundstmttype x.type)
-                :exprs       (vl-jp-exprlist x.exprs)
-                :stmts       (vl-jp-stmtlist x.stmts)
-                :name        (jp-maybe-string x.name)
-                :decls       (vl-jp-blockitemlist x.decls)
-                :ctrl        (vl-jp-maybe-delayoreventcontrol x.ctrl)
-                :sequentialp (jp-bool x.sequentialp)
-                :casetype    (vl-jp-casetype x.casetype)
-                :atts        (vl-jp-atts x.atts))))
+       :vl-assignstmt
+       (jp-object :tag    (jp-sym kind)
+                  :lvalue (vl-jp-expr x.lvalue)
+                  :expr   (vl-jp-expr x.expr)
+                  :ctrl   (vl-jp-maybe-delayoreventcontrol x.ctrl)
+                  :atts   (vl-jp-atts x.atts))
 
- (defund vl-jp-stmtlist-fn (x ps)
+       :vl-deassignstmt
+       (jp-object :tag    (jp-sym kind)
+                  :lvalue (vl-jp-expr x.lvalue)
+                  :atts   (vl-jp-atts x.atts))
+
+       :vl-enablestmt
+       (jp-object :tag    (jp-sym kind)
+                  :id     (vl-jp-expr x.id)
+                  :args   (vl-jp-exprlist x.args)
+                  :atts   (vl-jp-atts x.atts))
+
+       :vl-disablestmt
+       (jp-object :tag    (jp-sym kind)
+                  :id     (vl-jp-expr x.id)
+                  :atts   (vl-jp-atts x.atts))
+
+       :vl-eventtriggerstmt
+       (jp-object :tag    (jp-sym kind)
+                  :id     (vl-jp-expr x.id)
+                  :atts   (vl-jp-atts x.atts))
+
+       :vl-casestmt
+       (jp-object :tag      (jp-sym kind)
+                  :casetype (vl-jp-casetype x.casetype)
+                  :check    (vl-jp-casecheck x.check)
+                  :test     (vl-jp-expr x.test)
+                  :default  (vl-jp-stmt x.default)
+                  :caselist (vl-jp-cases x.caselist)
+                  :atts     (vl-jp-atts x.atts))
+
+       :vl-ifstmt
+       (jp-object :tag         (jp-sym kind)
+                  :condition   (vl-jp-expr x.condition)
+                  :truebranch  (vl-jp-stmt x.truebranch)
+                  :falsebranch (vl-jp-stmt x.falsebranch)
+                  :atts        (vl-jp-atts x.atts))
+
+       :vl-foreverstmt
+       (jp-object :tag       (jp-sym kind)
+                  :body      (vl-jp-stmt x.body)
+                  :atts      (vl-jp-atts x.atts))
+
+       :vl-waitstmt
+       (jp-object :tag       (jp-sym kind)
+                  :condition (vl-jp-expr x.condition)
+                  :body      (vl-jp-stmt x.body)
+                  :atts      (vl-jp-atts x.atts))
+
+       :vl-whilestmt
+       (jp-object :tag       (jp-sym kind)
+                  :condition (vl-jp-expr x.condition)
+                  :body      (vl-jp-stmt x.body)
+                  :atts      (vl-jp-atts x.atts))
+
+       :vl-forstmt
+       (jp-object :tag      (jp-sym kind)
+                  :initlhs  (vl-jp-expr x.initlhs)
+                  :initrhs  (vl-jp-expr x.initrhs)
+                  :test     (vl-jp-expr x.test)
+                  :nextlhs  (vl-jp-expr x.nextlhs)
+                  :nextrhs  (vl-jp-expr x.nextrhs)
+                  :body     (vl-jp-stmt x.body)
+                  :atts     (vl-jp-atts x.atts))
+
+       :vl-blockstmt
+       (jp-object :tag        (jp-sym kind)
+                  :sequential (jp-bool x.sequentialp)
+                  :name       (jp-maybe-string x.name)
+                  :decls      (vl-jp-blockitemlist x.decls)
+                  :stmts      (vl-jp-stmtlist x.stmts)
+                  :atts       (vl-jp-atts x.atts))
+
+       :vl-repeatstmt
+       (jp-object :tag       (jp-sym kind)
+                  :condition (vl-jp-expr x.condition)
+                  :body      (vl-jp-stmt x.body)
+                  :atts      (vl-jp-atts x.atts))
+
+       :vl-timingstmt
+       (jp-object :tag  (jp-sym kind)
+                  :ctrl (vl-jp-delayoreventcontrol x.ctrl)
+                  :body (vl-jp-stmt x.body)
+                  :atts (vl-jp-atts x.atts))
+
+       )))
+
+ (define vl-jp-stmtlist ((x vl-stmtlist-p) &key (ps 'ps))
    ;; Print the stmtessions as a JSON array with brackets.
-   (declare (xargs :guard (vl-stmtlist-p x)
-                   :stobjs ps
-                   :measure (two-nats-measure (acl2-count x) 1)))
+   :measure (two-nats-measure (vl-stmtlist-count x) 1)
    (vl-ps-seq (vl-print "[")
               (vl-jp-stmtlist-aux x)
               (vl-println? "]")))
 
- (defund vl-jp-stmtlist-aux-fn (x ps)
-   (declare (xargs :guard (vl-stmtlist-p x)
-                   :stobjs ps
-                   :measure (two-nats-measure (acl2-count x) 0)))
+ (define vl-jp-stmtlist-aux ((x vl-stmtlist-p) &key (ps 'ps))
+   :measure (two-nats-measure (vl-stmtlist-count x) 0)
    (b* (((when (atom x))
          ps))
      (vl-ps-seq (vl-jp-stmt (car x))
                 (if (atom (cdr x))
                     ps
                   (vl-println? ", "))
-                (vl-jp-stmtlist-aux (cdr x))))))
+                (vl-jp-stmtlist-aux (cdr x)))))
+
+ (define vl-jp-cases ((x vl-caselist-p) &key (ps 'ps))
+   ;; Print the stmtessions as a JSON array with brackets.
+   :measure (two-nats-measure (vl-caselist-count x) 1)
+   (vl-ps-seq (vl-print "[")
+              (vl-jp-cases-aux x)
+              (vl-println? "]")))
+
+ (define vl-jp-cases-aux ((x vl-caselist-p) &key (ps 'ps))
+   ;; Print the stmtessions as a JSON array with brackets.
+   :measure (two-nats-measure (vl-caselist-count x) 0)
+   (b* ((x (vl-caselist-fix x))
+        ((when (atom x))
+         ps)
+        ((cons exprs stmt1) (car x)))
+     (vl-ps-seq (vl-print "[")
+                (vl-jp-exprlist exprs)
+                (vl-println? ",")
+                (vl-jp-stmt stmt1)
+                (vl-println? "]")
+                (if (atom (cdr x))
+                    ps
+                  (vl-println? ", "))
+                (vl-jp-cases-aux (cdr x))))))
 
 (add-json-encoder vl-stmt-p vl-jp-stmt)
 (add-json-encoder vl-stmtlist-p vl-jp-stmtlist)
+(add-json-encoder vl-caselist-p vl-jp-cases)
 
 
 (def-vl-jp-aggregate always)

@@ -1,20 +1,30 @@
 ; VL Verilog Toolkit
-; Copyright (C) 2008-2011 Centaur Technology
+; Copyright (C) 2008-2014 Centaur Technology
 ;
 ; Contact:
 ;   Centaur Technology Formal Verification Group
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -27,6 +37,13 @@
          (implies (vl-modulelist-p x)
                   (iff (first x)
                        (consp x)))))
+
+(define vl-make-constdelay ((n natp))
+  :returns (del vl-gatedelay-p)
+  (let ((expr (vl-make-index n)))
+    (make-vl-gatedelay :rise expr
+                       :fall expr
+                       :high expr)))
 
 (defsection delayredux
   :parents (transforms)
@@ -118,6 +135,7 @@ assignment like:</p>
 <p>And the @('~in') argument isn't split up, which can confuse later transforms
 like @(see occform).</p>")
 
+(local (xdoc::set-default-parents delayredux))
 
 (define vl-simpledelay-p ((x vl-gatedelay-p))
   :parents (delayredux vl-gatedelay-p)
@@ -135,22 +153,18 @@ ticks.</p>"
   (b* (((vl-gatedelay x) x))
     (and (vl-expr-resolved-p x.rise)
          (vl-expr-resolved-p x.fall)
-         (int= (vl-resolved->val x.rise) (vl-resolved->val x.fall))
+         (eql (vl-resolved->val x.rise) (vl-resolved->val x.fall))
          (or (not x.high)
              (and (vl-expr-resolved-p x.high)
-                  (int= (vl-resolved->val x.rise) (vl-resolved->val x.high)))))))
+                  (eql (vl-resolved->val x.rise) (vl-resolved->val x.high)))))))
 
 (define vl-simpledelay->amount ((x (and (vl-gatedelay-p x)
                                         (vl-simpledelay-p x))))
   :parents (vl-simpledelay-p)
-  :returns amount
+  :returns (amount natp :rule-classes :type-prescription)
   (lnfix (vl-resolved->val (vl-gatedelay->rise x)))
   :short "Get the number of ticks for a simple delay."
-  :prepwork ((local (in-theory (enable vl-simpledelay-p))))
-  ///
-  (defthm natp-of-vl-gatedelay->amount
-    (natp (vl-simpledelay->amount x))
-    :rule-classes :type-prescription))
+  :prepwork ((local (in-theory (enable vl-simpledelay-p)))))
 
 
 (define vl-make-m-bit-delay-insts ((n natp)
@@ -168,13 +182,99 @@ ticks.</p>"
                    (make-vl-plainarg :expr (car ins)  :dir :vl-input  :portname "in"))))
     (cons (make-vl-modinst :instname  (cat basename (natstr n))
                            :modname   modname
-                           :paramargs (vl-arguments nil nil)
-                           :portargs  (vl-arguments nil args)
+                           :paramargs (make-vl-arguments-plain :args nil)
+                           :portargs  (make-vl-arguments-plain :args args)
                            :loc       *vl-fakeloc*)
           (vl-make-m-bit-delay-insts (+ n 1) basename modname (cdr outs) (cdr ins)))))
 
+
+(define vl-make-n-bit-delay-1 ((n posp) &key vecp)
+  :parents (occform)
+  :short "Generate an n-bit wide, 1-tick delay module."
+
+  :long "<p>We generate a module in terms of @(see primitives) that is
+equivalent to:</p>
+
+@({
+ module VL_n_BIT_DELAY_1 (out, in) ;
+   output [n-1:0] out;
+   input [n-1:0] in;
+   assign #1 out = in;
+ endmodule
+})
+
+<p>When @('n') is 1, this is just our primitive @(see *vl-1-bit-delay-1*)
+module.</p>
+
+<p>When @('n') is something larger than 1, then if @('vecp') is true we just make
+the module above.  Otherwise, we instantiate @('n') 1-bit
+delays.  For instance, a four-bit delay looks like this:</p>
+
+@({
+module VL_4_BIT_DELAY_1 (out, in) ;
+  output [3:0] out;
+  input [3:0] in;
+
+  VL_1_BIT_DELAY_1 del0 (out[0], in[0]);
+  VL_1_BIT_DELAY_1 del1 (out[1], in[1]);
+  VL_1_BIT_DELAY_1 del2 (out[2], in[2]);
+  VL_1_BIT_DELAY_1 del3 (out[3], in[3]);
+endmodule
+})"
+  :returns (mods vl-modulelist-p :hyp :guard
+                 "A non-empty module list.  The first module in the list
+                       is the desired module; the other modules are any
+                       necessary supporting modules.")
+  (b* (((when (eql n 1))
+        (list *vl-1-bit-delay-1*))
+
+       (name  (cat "VL_" (natstr n) "_BIT_DELAY_1"))
+
+       ((mv out-expr out-port out-portdecl out-netdecl) (vl-occform-mkport "out" :vl-output n))
+       ((mv in-expr  in-port  in-portdecl  in-netdecl)  (vl-occform-mkport "in" :vl-input n))
+
+       ((when vecp)
+        (b* ((assign (make-vl-assign
+                      :lvalue out-expr
+                      :expr in-expr
+                      :delay (make-vl-gatedelay :rise (vl-make-index 1)
+                                                :fall (vl-make-index 1))
+                      :loc *vl-fakeloc*))
+             (mod (make-vl-module :name name
+                                  :origname name
+                                  :ports (list out-port in-port)
+                                  :portdecls (list out-portdecl in-portdecl)
+                                  :netdecls (list out-netdecl in-netdecl)
+                                  :assigns (list assign)
+                                  :minloc *vl-fakeloc*
+                                  :atts `(("VL_SVEX_PRIMITIVE" . ,(make-vl-atom :guts (vl-string "delay")))
+                                          ("VL_SVEX_PRIMITIVE_WIDTH" . ,(vl-make-index n))
+                                          ("VL_HANDS_OFF"))
+                                  :maxloc *vl-fakeloc*)))
+          (list mod)))
+
+       (outs  (vl-make-list-of-bitselects out-expr 0 (1- n)))
+       (ins   (vl-make-list-of-bitselects in-expr 0 (1- n)))
+       (insts (vl-simple-inst-list *vl-1-bit-delay-1* "del" outs ins))
+
+       (mod   (make-vl-module :name      name
+                              :origname  name
+                              :ports     (list out-port     in-port)
+                              :portdecls (list out-portdecl in-portdecl)
+                              :netdecls  (list out-netdecl  in-netdecl)
+                              :modinsts  insts
+                              :minloc    *vl-fakeloc*
+                              :maxloc    *vl-fakeloc*)))
+    (list mod *vl-1-bit-delay-1*))
+  ///
+  (defthm type-of-vl-make-n-bit-delay-1
+    (and (true-listp (vl-make-n-bit-delay-1 n :vecp vecp))
+         (consp (vl-make-n-bit-delay-1 n :vecp vecp)))
+    :rule-classes :type-prescription))
+
+
+
 (def-vl-modgen vl-make-1-bit-delay-m (m)
-  :parents (delayredux)
   :short "Generate a one-bit wide, M-tick delay module."
 
   :long "<p>We generate a module in terms of @(see primitives) that is
@@ -210,7 +310,7 @@ endmodule
 
   :guard (posp m)
   :body
-  (b* (((when (= m 1))
+  (b* (((when (eql m 1))
         (list *vl-1-bit-delay-1*))
 
        (name  (cat "VL_1_BIT_DELAY_" (natstr m)))
@@ -233,6 +333,7 @@ endmodule
                               :portdecls (list out-portdecl in-portdecl)
                               :netdecls  (list out-netdecl  in-netdecl   temp-netdecl)
                               :modinsts  insts
+                              :atts      '(("VL_HANDS_OFF"))
                               :minloc    *vl-fakeloc*
                               :maxloc    *vl-fakeloc*)))
     (list mod *vl-1-bit-delay-1*)))
@@ -246,8 +347,8 @@ endmodule
 ||#
 
 
-(def-vl-modgen vl-make-n-bit-delay-m (n m)
-  :parents (delayredux)
+(define vl-make-n-bit-delay-m ((n posp) (m posp) &key vecp)
+  :parents (occform)
   :short "Generate an N-bit wide, M-tick delay module."
 
   :long "<p>We generate a module in terms of @(see primitives) that is
@@ -261,32 +362,31 @@ equivalent to:</p>
  endmodule
 })
 
-<p>In the special case that @('n') is 1, we build a @('VL_1_BIT_DELAY_M')
-module using @(see vl-make-1-bit-delay-m).</p>
+<p>In the special case that @('m') is 1, we build a @('VL_N_BIT_DELAY_1')
+module using @(see vl-make-n-bit-delay-1).</p>
 
-<p>Otherwise, we just chain together a list of these modules, one for each bit.
-For instance, a module that implements 4-bit wide delay for 30 ticks would look
+<p>Otherwise, we just chain together a list of these modules, one for each tick.
+For instance, a module that implements 4-bit wide delay for 3 ticks would look
 like this:</p>
 
 @({
- module VL_4_BIT_DELAY_30 (out, in);
+ module VL_4_BIT_DELAY_3 (out, in);
    output [3:0] out;
    output [3:0] in;
 
-   VL_1_BIT_DELAY_30 bit0 (out[0], in[0]);
-   VL_1_BIT_DELAY_30 bit1 (out[1], in[1]);
-   VL_1_BIT_DELAY_30 bit2 (out[2], in[2]);
-   VL_1_BIT_DELAY_30 bit3 (out[3], in[3]);
+   wire [3:0] temp1;
+   wire [3:0] temp2;
+
+   VL_4_BIT_DELAY_1 bit0 (temp1, in);
+   VL_4_BIT_DELAY_1 bit1 (temp2, temp1);
+   VL_4_BIT_DELAY_1 bit2 (out, temp2);
  endmodule
 })"
+  :returns (mods vl-modulelist-p :hyp :guard)
 
-  :guard (and (posp n)
-              (posp m))
+  (b* ((base (vl-make-n-bit-delay-1 n :vecp vecp))
 
-  :body
-  (b* ((base (vl-make-1-bit-delay-m m))
-
-       ((when (= n 1))
+       ((when (= m 1))
         base)
 
        (name (cat "VL_" (natstr n) "_BIT_DELAY_" (natstr m)))
@@ -294,37 +394,44 @@ like this:</p>
        ((mv out-expr out-port out-portdecl out-netdecl) (vl-occform-mkport "out" :vl-output n))
        ((mv in-expr  in-port  in-portdecl  in-netdecl)  (vl-occform-mkport "in" :vl-input n))
 
-       (in-wires  (vl-make-list-of-bitselects in-expr  0 (- n 1)))
-       (out-wires (vl-make-list-of-bitselects out-expr 0 (- n 1)))
 
-       (insts (vl-make-m-bit-delay-insts 0 "bit"
-                                         (vl-module->name (car base))
-                                         out-wires in-wires))
+       ((mv tmp-exprs tmp-netdecls) (vl-occform-mkwires "temp" 1 m :width n))
+
+       (outs  (append tmp-exprs (list out-expr)))
+       (ins   (cons in-expr tmp-exprs))
+
+       (insts (vl-simple-inst-list (car base) "del" outs ins))
 
        (mod (make-vl-module :name      name
                             :origname  name
                             :ports     (list out-port in-port)
                             :portdecls (list out-portdecl in-portdecl)
-                            :netdecls  (list out-netdecl in-netdecl)
+                            :netdecls  (list* out-netdecl in-netdecl tmp-netdecls)
                             :modinsts  insts
                             :minloc    *vl-fakeloc*
                             :maxloc    *vl-fakeloc*)))
-    (cons mod base)))
+    (cons mod base))
+  ///
+  (defthm type-of-vl-make-n-bit-delay-m
+    (and (true-listp (vl-make-n-bit-delay-m n m :vecp vecp))
+         (consp (vl-make-n-bit-delay-m n m :vecp vecp)))
+    :rule-classes :type-prescription))
 
 #||
 (include-book ;; fool dependency scanner
  "../mlib/writer")
 (vl-pps-modulelist (vl-make-n-bit-delay-m 1 17))
 (vl-pps-modulelist (vl-make-n-bit-delay-m 2 17))
+(vl-pps-modulelist (vl-make-n-bit-delay-m 3 17 :vecp t))
 (vl-pps-modulelist (vl-make-n-bit-delay-m 3 17))
 ||#
 
 
 (define vl-assign-delayredux ((x vl-assign-p)
-                              (delta vl-delta-p))
+                              (delta vl-delta-p)
+                              &key vecp state-onlyp)
   :returns (mv (new-x vl-assign-p :hyp :fguard)
                (delta vl-delta-p  :hyp :fguard))
-  :parents (delayredux)
   :short "Remove the delay from an assignment by introducing an explicit delay
 module."
 
@@ -339,8 +446,7 @@ module."
                      :msg "~a0: the delay on this assignment is too complex; ~
                            we only handle plain delays for now."
                      :args (list x)
-                     :fatalp t
-                     :fn 'vl-assign-delayredux)))
+                     :fatalp t)))
 
        (width   (vl-expr->finalwidth x.expr))
        ((unless (posp width))
@@ -348,8 +454,7 @@ module."
                      :msg "~a0: expected widths to be computed and positive, ~
                            but rhs width is ~x1."
                      :args (list x width)
-                     :fatalp t
-                     :fn 'vl-assign-delayredux)))
+                     :fatalp t)))
 
        (delay (vl-simpledelay->amount x.delay))
 
@@ -357,9 +462,13 @@ module."
         ;; Goofy, explicit zero delay -- just drop it from this assignment.
         (mv (change-vl-assign x :delay nil) delta))
 
+       ((when (and state-onlyp (not (hons-assoc-equal "VL_STATE_DELAY" x.atts))))
+        ;; Drop plain tick delays, i.e. ones that are not stateholding
+        (mv (change-vl-assign x :delay nil) delta))
+
        ((vl-delta delta) delta)
 
-       (addmods           (vl-make-n-bit-delay-m width delay))
+       (addmods           (vl-make-n-bit-delay-m width delay :vecp vecp))
        ((mv temp-name nf) (vl-namefactory-indexed-name "vl_del" delta.nf))
        ((mv instname nf)  (vl-namefactory-indexed-name "vl_mkdel" nf))
 
@@ -386,21 +495,20 @@ module."
     (mv new-x delta)))
 
 (define vl-assignlist-delayredux ((x vl-assignlist-p)
-                                  (delta vl-delta-p))
+                                  (delta vl-delta-p)
+                                  &key vecp state-onlyp)
   :returns (mv (new-x vl-assignlist-p :hyp :fguard)
                (delta vl-delta-p      :hyp :fguard))
-  :parents (delayredux)
   (b* (((when (atom x))
         (mv nil delta))
-       ((mv car delta) (vl-assign-delayredux (car x) delta))
-       ((mv cdr delta) (vl-assignlist-delayredux (cdr x) delta)))
+       ((mv car delta) (vl-assign-delayredux (car x) delta :vecp vecp :state-onlyp state-onlyp))
+       ((mv cdr delta) (vl-assignlist-delayredux (cdr x) delta :vecp vecp :state-onlyp state-onlyp)))
     (mv (cons car cdr) delta)))
 
 
 
 
 (define vl-gatearg-ok-for-delayredux-p ((x vl-plainarg-p))
-  :parents (delayredux)
   :inline t
   (b* (((vl-plainarg x) x))
     (and
@@ -416,7 +524,6 @@ module."
          (eql (vl-expr->finalwidth x.expr) 1)))))
 
 (define vl-why-is-gatearg-bad-for-delayredux ((x vl-plainarg-p))
-  :parents (delayredux)
   :short "For error reporting, say what the problem with this bad argument is."
   (b* (((vl-plainarg x) x)
        (width (and x.expr
@@ -433,12 +540,10 @@ module."
 (deflist vl-gateargs-ok-for-delayredux-p (x)
   (vl-gatearg-ok-for-delayredux-p x)
   :guard (vl-plainarglist-p x)
-  :elementp-of-nil nil
-  :parents (delayredux))
+  :elementp-of-nil nil)
 
 (define vl-first-bad-gatearg-for-delayredux ((x vl-plainarglist-p))
   :short "For error reporting, find an arg that has a problem."
-  :parents (delayredux)
   (cond ((atom x)
          nil)
         ((vl-gatearg-ok-for-delayredux-p (car x))
@@ -465,7 +570,6 @@ module."
    (delta    vl-delta-p))
   :returns (mv (new-x vl-plainarg-p :hyp :fguard)
                (delta vl-delta-p    :hyp :fguard))
-  :parents (delayredux)
   (b* (((vl-plainarg x) x)
        ((unless (eq x.dir :vl-input))
         ;; We only delay inputs, so there's nothing to do.
@@ -504,7 +608,6 @@ module."
    (delta    vl-delta-p))
   :returns (mv (new-x vl-plainarglist-p :hyp :fguard)
                (delta vl-delta-p        :hyp :fguard))
-  :parents (delayredux)
   (b* (((when (atom x))
         (mv x delta))
        ((mv car delta) (vl-gatearg-delayredux delaymod (car x) loc delta))
@@ -512,10 +615,10 @@ module."
     (mv (cons car cdr) delta)))
 
 (define vl-gateinst-delayredux ((x vl-gateinst-p)
-                                (delta vl-delta-p))
+                                (delta vl-delta-p)
+                                &key vecp state-onlyp)
   :returns (mv (new-x vl-gateinst-p :hyp :fguard)
                (delta vl-delta-p    :hyp :fguard))
-  :parents (delayredux)
   (b* (((vl-gateinst x) x)
        ((unless x.delay)
         ;; No delay, nothing to do
@@ -535,6 +638,11 @@ module."
         ;; BOZO is this really okay?
         (mv (change-vl-gateinst x :delay nil) delta))
 
+       ((when (and state-onlyp (not (hons-assoc-equal "VL_STATE_DELAY" x.atts))))
+        ;; Drop plain tick delays, i.e. ones that are not stateholding
+        ;; BOZO make this a simpconfig option
+        (mv (change-vl-gateinst x :delay nil) delta))
+
        (badarg (vl-first-bad-gatearg-for-delayredux x.args))
        ((when badarg)
         (mv x (dwarn :type :vl-delay-toohard
@@ -545,7 +653,7 @@ module."
                      :fatalp t
                      :fn 'vl-gateinst-delayredux)))
 
-       (addmods  (vl-make-1-bit-delay-m amount))
+       (addmods  (vl-make-n-bit-delay-m 1 amount :vecp vecp))
        (delaymod (car addmods))
        ((mv new-args delta)
         (vl-gatearglist-delayredux delaymod x.args x.loc delta))
@@ -555,20 +663,19 @@ module."
     (mv new-x delta)))
 
 (define vl-gateinstlist-delayredux ((x vl-gateinstlist-p)
-                                    (delta vl-delta-p))
+                                    (delta vl-delta-p)
+                                    &key vecp state-onlyp)
   :returns (mv (new-x vl-gateinstlist-p :hyp :fguard)
                (delta vl-delta-p        :hyp :fguard))
-  :parents (delayredux)
   (b* (((when (atom x))
         (mv nil delta))
-       ((mv car delta) (vl-gateinst-delayredux (car x) delta))
-       ((mv cdr delta) (vl-gateinstlist-delayredux (cdr x) delta)))
+       ((mv car delta) (vl-gateinst-delayredux (car x) delta :vecp vecp :state-onlyp state-onlyp))
+       ((mv cdr delta) (vl-gateinstlist-delayredux (cdr x) delta :vecp vecp :state-onlyp state-onlyp)))
     (mv (cons car cdr) delta)))
 
-(define vl-module-delayredux ((x vl-module-p))
+(define vl-module-delayredux ((x vl-module-p) &key vecp state-onlyp)
   :returns (mv (new-x   vl-module-p     :hyp :fguard)
                (addmods vl-modulelist-p :hyp :fguard))
-  :parents (delayredux)
   (b* (((vl-module x) x)
        ((when (vl-module->hands-offp x))
         (mv x nil))
@@ -577,8 +684,8 @@ module."
        (delta (change-vl-delta delta
                                :netdecls x.netdecls
                                :modinsts x.modinsts))
-       ((mv assigns delta)   (vl-assignlist-delayredux x.assigns delta))
-       ((mv gateinsts delta) (vl-gateinstlist-delayredux x.gateinsts delta))
+       ((mv assigns delta)   (vl-assignlist-delayredux x.assigns delta :vecp vecp :state-onlyp state-onlyp))
+       ((mv gateinsts delta) (vl-gateinstlist-delayredux x.gateinsts delta :vecp vecp :state-onlyp state-onlyp))
        ((vl-delta delta)     (vl-free-delta delta))
 
        (new-x (change-vl-module
@@ -595,40 +702,44 @@ module."
     (mv new-x delta.addmods))
   ///
   (defthm vl-module->name-of-vl-module-delayredux
-    (equal (vl-module->name (mv-nth 0 (vl-module-delayredux x)))
+    (equal (vl-module->name (mv-nth 0 (vl-module-delayredux x :vecp vecp :state-onlyp state-onlyp)))
            (vl-module->name x))))
 
-(define vl-modulelist-delayredux-aux ((x vl-modulelist-p))
+(define vl-modulelist-delayredux-aux ((x vl-modulelist-p) &key vecp state-onlyp)
   :returns (mv (new-x   vl-modulelist-p :hyp :fguard)
                (addmods vl-modulelist-p :hyp :fguard))
-  :parents (delayredux)
   (b* (((when (atom x))
         (mv nil nil))
-       ((mv car car-addmods) (vl-module-delayredux (car x)))
-       ((mv cdr cdr-addmods) (vl-modulelist-delayredux-aux (cdr x))))
+       ((mv car car-addmods) (vl-module-delayredux (car x) :vecp vecp :state-onlyp state-onlyp))
+       ((mv cdr cdr-addmods) (vl-modulelist-delayredux-aux (cdr x) :vecp vecp :state-onlyp state-onlyp)))
     (mv (cons car cdr)
         (append-without-guard car-addmods cdr-addmods)))
   ///
   (defthm vl-modulelist->names-of-vl-modulelist-delayredux-aux
-    (b* (((mv new-x ?addmods) (vl-modulelist-delayredux-aux x)))
+    (b* (((mv new-x ?addmods) (vl-modulelist-delayredux-aux x :vecp vecp :state-onlyp state-onlyp)))
       (equal (vl-modulelist->names new-x)
              (vl-modulelist->names x)))))
 
 
-(define vl-modulelist-delayredux ((x vl-modulelist-p))
+(define vl-modulelist-delayredux ((x vl-modulelist-p) &key vecp state-onlyp)
   :returns (new-x vl-modulelist-p :hyp :fguard)
-  :parents (delayredux)
   (b* (((mv x-prime addmods)
-        (vl-modulelist-delayredux-aux x))
+        (vl-modulelist-delayredux-aux x :vecp vecp :state-onlyp state-onlyp))
        (merged (union (mergesort x-prime)
                       (mergesort addmods)))
        ((unless (uniquep (vl-modulelist->names merged)))
-        (er hard? 'vl-modulelist-delayredux
-            "Name collision for ~&0."
-            (duplicated-members (vl-modulelist->names merged)))))
+        (raise "Name collision for ~&0."
+               (duplicated-members (vl-modulelist->names merged)))))
       merged)
   ///
   (defthm no-duplicatesp-equal-of-vl-modulelist->names-of-vl-modulelist-delayredux
-    (no-duplicatesp-equal (vl-modulelist->names (vl-modulelist-delayredux x)))))
+    (no-duplicatesp-equal (vl-modulelist->names (vl-modulelist-delayredux x :vecp vecp :state-onlyp state-onlyp)))))
+
+
+(define vl-design-delayredux ((x vl-design-p) &key vecp state-onlyp)
+  :returns (new-x vl-design-p)
+  (b* ((x (vl-design-fix x))
+       ((vl-design x) x))
+    (change-vl-design x :mods (vl-modulelist-delayredux x.mods :vecp vecp :state-onlyp state-onlyp))))
 
 

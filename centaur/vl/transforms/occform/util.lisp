@@ -1,20 +1,30 @@
 ; VL Verilog Toolkit
-; Copyright (C) 2008-2011 Centaur Technology
+; Copyright (C) 2008-2014 Centaur Technology
 ;
 ; Contact:
 ;   Centaur Technology Formal Verification Group
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -26,22 +36,23 @@
 (include-book "../../mlib/namefactory")
 (local (include-book "../../util/arithmetic"))
 (local (include-book "../../util/osets"))
+(local (std::add-default-post-define-hook :fix))
+(local (xdoc::set-default-parents occform))
 
-
-(define vl-occform-mkwire ((name stringp)
-                           (width posp)
-                           &key
-                           ((loc vl-location-p) '*vl-fakeloc*))
-  :returns (mv (expr    vl-expr-p    :hyp :fguard
-                        "already sized, unsigned")
-               (netdecl vl-netdecl-p :hyp :fguard))
-  :parents (occform)
+(define vl-occform-mkwire
   :short "Helper function for creating ports in generated modules."
+  ((name stringp)
+   (width posp)
+   &key
+   ((loc vl-location-p) '*vl-fakeloc*))
+  :returns (mv (expr    vl-expr-p "already sized, unsigned")
+               (netdecl vl-netdecl-p))
+  :verbosep t
   :long "<p>Imagine that we are trying to programmatically generate a module,
 and we want to add a wire with the given name and width.  This function just
 generates the corresponding expression and net declaration.</p>"
-
-  (b* ((name     (hons-copy name))
+  (b* ((name     (hons-copy (string-fix name)))
+       (width    (lposfix width))
        (expr     (vl-idexpr name width :vl-unsigned))
        (range    (vl-make-n-bit-range width))
        (netdecl  (make-vl-netdecl :name name
@@ -50,25 +61,23 @@ generates the corresponding expression and net declaration.</p>"
                                   :loc loc)))
     (mv expr netdecl)))
 
-
 (define vl-occform-mkport ((name  stringp)
                            (dir   vl-direction-p)
                            (width posp))
-  :returns (mv (expr     vl-expr-p     :hyp :fguard
-                         "already sized, unsigned")
-               (port     vl-port-p     :hyp :fguard)
-               (portdecl vl-portdecl-p :hyp :fguard)
-               (netdecl  vl-netdecl-p  :hyp :fguard))
-  :parents (occform)
+  :returns (mv (expr     vl-expr-p)
+               (port     vl-port-p)
+               (portdecl vl-portdecl-p)
+               (netdecl  vl-netdecl-p))
   :short "Helper for creating ports in generated modules."
   :long "<p>Imagine that we are trying to programmatically generate a module,
 and we want to add a port with the given name, direction, and width.  This
 function just generates the corresponding expression, port, port declaration,
 and net declaration.</p>"
 
-  (b* ((name     (hons-copy name))
+  (b* ((name     (hons-copy (string-fix name)))
+       (width    (lposfix width))
        (expr     (vl-idexpr name width :vl-unsigned))
-       (range    (and width (vl-make-n-bit-range width)))
+       (range    (vl-make-n-bit-range width))
        (port     (make-vl-port :name name :expr expr :loc *vl-fakeloc*))
        (portdecl (make-vl-portdecl :name  name
                                    :dir   dir
@@ -81,7 +90,37 @@ and net declaration.</p>"
       (mv expr port portdecl netdecl)))
 
 
-(defmacro def-vl-modgen (name formals
+
+(defun def-vl-modgen-fn (name raw-formals
+                              parents short long
+                              body
+                              guard verify-guards guard-debug
+                              state)
+  (declare (xargs :mode :program :stobjs state))
+  (let* ((world (w state))
+         (mksym-package-symbol name)
+         (parsed-formals (std::parse-formals `(def-vl-modgen ,name) raw-formals '(:type) world))
+         (plain-formals  (std::formallist->names parsed-formals)))
+    `(define ,name
+       :parents ,parents
+       :short ,short
+       ,raw-formals
+       :guard ,guard
+       :guard-debug ,guard-debug
+       :verify-guards ,verify-guards
+       :returns (mods vl-modulelist-p
+                      "A non-empty module list.  The first module in the list
+                       is the desired module; the other modules are any
+                       necessary supporting modules.")
+       :long ,long
+       ,body
+       ///
+       (defthm ,(mksym 'type-of- name)
+         (and (true-listp (,name . ,plain-formals))
+              (consp (,name . ,plain-formals)))
+         :rule-classes :type-prescription))))
+
+(defmacro def-vl-modgen (name raw-formals
                               &key
                               (parents '(occform))
                               (short '"")
@@ -90,44 +129,22 @@ and net declaration.</p>"
                               (guard 't)
                               (verify-guards 't)
                               guard-debug)
-  (declare (xargs :guard (and (symbolp name)
-                              (symbol-listp formals))))
-  (let ((mksym-package-symbol name))
-    `(defsection ,name
-       :parents ,parents
-       :short ,short
-       :long ,(cat "<p><b>Signature:</b> @(call " (symbol-name name) ")
-returns a non-empty module list.  The first module in the list is the desired
-module; the other modules are any necessary supporting modules.</p>" long)
-
-       (defund ,name ,formals
-         (declare (xargs :guard ,guard
-                         :guard-debug ,guard-debug
-                         :verify-guards ,verify-guards))
-         ,body)
-
-       (local (in-theory (enable ,name)))
-
-       (defthm ,(mksym 'vl-modulelist-p-of- name)
-         (implies (force ,guard)
-                  (vl-modulelist-p (,name . ,formals))))
-
-       (defthm ,(mksym 'type-of- name)
-         (and (true-listp (,name . ,formals))
-              (consp (,name . ,formals)))
-         :rule-classes :type-prescription))))
-
+  `(make-event
+    (def-vl-modgen-fn ',name ',raw-formals
+      ',parents ',short ',long
+      ',body
+      ',guard ',verify-guards ',guard-debug
+      state)))
 
 (define vl-simple-instantiate-args-main
+  :short "Create plainargs binding some actuals to their ports, filling in the
+portnames and directions."
   ((actuals   vl-exprlist-p)
    (ports     vl-portlist-p)
    (portdecls vl-portdecllist-p "for figuring out directions"))
   :guard (same-lengthp actuals ports)
-  :returns (args vl-plainarglist-p :hyp :fguard)
+  :returns (args vl-plainarglist-p)
   :parents (vl-simple-instantiate)
-  :short "Create plainargs binding some actuals to their ports, filling in the
-portnames and directions."
-
   (b* (((when (atom actuals))
         nil)
        ((vl-port port) (car ports))
@@ -135,33 +152,29 @@ portnames and directions."
                      port.expr
                      (vl-idexpr-p port.expr)
                      (equal (vl-idexpr->name port.expr) port.name)))
-        (er hard? 'vl-simple-instantiate-args-main
-            "Port too complicated: ~x0.~%" (car ports)))
+        (raise "Port too complicated: ~x0.~%" (car ports)))
 
        (decl (vl-find-portdecl port.name portdecls))
        ((unless decl)
-        (er hard? 'vl-simple-instantiate-args-main
-            "Port is not declared: ~x0.~%" port.name))
+        (raise "Port is not declared: ~x0.~%" port.name))
 
-       (dir (vl-portdecl->dir decl))
-       (arg (make-vl-plainarg :expr     (car actuals)
-                              :dir      dir
-                              :portname port.name)))
+       (actual (vl-expr-fix (car actuals)))
+       (dir    (vl-portdecl->dir decl))
+       (arg    (make-vl-plainarg :expr     actual
+                                 :dir      dir
+                                 :portname port.name)))
     (cons arg
           (vl-simple-instantiate-args-main (cdr actuals) (cdr ports)
                                            portdecls))))
 
 (define vl-simple-instantiate
-  ((x        "submodule to create an instance of" vl-module-p)
-   (instname "name for the new instance"          stringp)
-   (actuals  "expressions to bind to the module's ports in port order"
-             vl-exprlist-p)
+  ((x        vl-module-p   "submodule to create an instance of")
+   (instname stringp       "name for the new instance")
+   (actuals  vl-exprlist-p "expressions to bind to the module's ports in port order")
    &key
    ((loc vl-location-p) '*vl-fakeloc*))
-  :returns (inst vl-modinst-p :hyp :fguard)
-  :parents (occform)
+  :returns (inst vl-modinst-p)
   :short "Convenient way to generating module instances."
-
   :long "<p>If you are writing code to generate modules (as we often are in
 @(see occform)), it can be particularly onerous to generate module instances
 because you have to build @(see vl-plainarg-p) structures for all of the
@@ -178,12 +191,11 @@ arity checking.</p>"
        (plainargs
         (if (same-lengthp actuals x.ports)
             (vl-simple-instantiate-args-main actuals x.ports x.portdecls)
-          (er hard? 'vl-simple-instantiate
-              "Wrong number of arguments for ~x0.~%" x.name))))
+          (raise "Wrong number of arguments for ~x0.~%" x.name))))
     (make-vl-modinst :modname   x.name
-                     :instname  instname
-                     :paramargs (vl-arguments nil nil)
-                     :portargs  (vl-arguments nil plainargs)
+                     :instname  (string-fix instname)
+                     :paramargs (make-vl-arguments-plain :args nil)
+                     :portargs  (make-vl-arguments-plain :args plainargs)
                      :loc       loc)))
 
 
@@ -205,13 +217,13 @@ you don't have to put the actuals in a list."
    &key
    ((n natp "name index, counts up") '0)
    ((loc vl-location-p) '*vl-fakeloc*))
-  :returns (insts vl-modinstlist-p :hyp :fguard)
+  :returns (insts vl-modinstlist-p)
   :parents (vl-simple-instantiate)
   :short "Generate a bunch of module instances."
   (if (atom arglists)
       nil
     (cons (vl-simple-instantiate x (cat prefix (natstr n)) (car arglists) :loc loc)
-          (vl-simple-instantiate-list-fn x prefix (cdr arglists) (+ 1 n) loc))))
+          (vl-simple-instantiate-list-fn x prefix (cdr arglists) (+ 1 (lnfix n)) loc))))
 
 
 
@@ -242,9 +254,8 @@ you don't have to put the actuals in a list."
                             (width  posp "width of each wire")
                             ((loc vl-location-p) '*vl-fakeloc*))
   :guard   (<= i n)
-  :returns (mv (exprs vl-exprlist-p :hyp :fguard)
-               (decls vl-netdecllist-p :hyp :fguard))
-  :parents (occform)
+  :returns (mv (exprs vl-exprlist-p)
+               (decls vl-netdecllist-p))
   :short "Helper function for creating lists of net declarations."
   :long "<p>We generate a list of net declarations,</p>
 @({
@@ -258,8 +269,10 @@ sizes pre-computed.</p>"
 
   :measure (nfix (- (nfix n) (nfix i)))
 
-  (b* (((when (zp (- (lnfix n) (lnfix i))))
+  (b* (((when (mbe :logic (zp (- (lnfix n) (lnfix i)))
+                   :exec (eql i n)))
         (mv nil nil))
+       (width (lposfix width))
        (name  (hons-copy (cat prefix (natstr i))))
        (expr  (vl-idexpr name width :vl-unsigned))
        (decl  (make-vl-netdecl :name  name
@@ -288,3 +301,60 @@ sizes pre-computed.</p>"
                                                :loc loc)))
       (and (iff exprs (posp (- (nfix n) (nfix i))))
            (iff decls (posp (- (nfix n) (nfix i))))))))
+
+
+(define vl-occform-mkports ((prefix stringp "name prefix for each port")
+                            (i      natp    "starting index, <b>inclusive!</b>")
+                            (n      natp    "ending index, <b>non-inclusive!</b>")
+                            &key
+                            (dir    vl-direction-p "direction of each port")
+                            (width  posp           "width of each port")
+                            ((loc vl-location-p)   '*vl-fakeloc*))
+  :guard   (<= i n)
+  :returns (mv (exprs     vl-exprlist-p)
+               (ports     vl-portlist-p)
+               (portdecls vl-portdecllist-p)
+               (netdecls  vl-netdecllist-p))
+  :short "Helper function for creating lists of port declarations."
+  :measure (nfix (- (nfix n) (nfix i)))
+
+  (b* (((when (mbe :logic (zp (- (lnfix n) (lnfix i)))
+                   :exec (eql i n)))
+        (mv nil nil nil nil))
+       (name1 (hons-copy (cat prefix (natstr i))))
+       ((mv expr1 port1 portdecl1 netdecl1)
+        (vl-occform-mkport name1 dir width))
+       ((mv exprs2 ports2 portdecls2 netdecls2)
+        (vl-occform-mkports prefix (+ 1 (lnfix i)) n
+                            :dir dir :width width :loc loc)))
+    (mv (cons expr1 exprs2)
+        (cons port1 ports2)
+        (cons portdecl1 portdecls2)
+        (cons netdecl1 netdecls2)))
+  ///
+  (defmvtypes vl-occform-mkports-fn
+    (true-listp true-listp true-listp true-listp))
+
+  (defthm len-of-vl-occform-mkports
+    (b* (((mv exprs ports portdecls netdecls)
+          (vl-occform-mkports prefix i n
+                              :dir dir
+                              :width width
+                              :loc loc))
+         (len (nfix (- (nfix n) (nfix i)))))
+      (and (equal (len exprs) len)
+           (equal (len ports) len)
+           (equal (len portdecls) len)
+           (equal (len netdecls) len))))
+
+  (defthm vl-occform-mkports-under-iff
+    (b* (((mv exprs ports portdecls netdecls)
+          (vl-occform-mkports prefix i n
+                              :dir dir
+                              :width width
+                              :loc loc))
+         (len (- (nfix n) (nfix i))))
+      (and (iff exprs     (posp len))
+           (iff ports     (posp len))
+           (iff portdecls (posp len))
+           (iff netdecls  (posp len))))))

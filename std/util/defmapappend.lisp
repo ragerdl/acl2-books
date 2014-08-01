@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -47,6 +57,7 @@
          short                   ; nil by default
          long                    ; nil by default
          rest                    ; nil by default
+         already-definedp        ; nil by default
          )
 })
 
@@ -120,6 +131,11 @@ to introduce the recognizer in logic or program mode.  The default is whatever
 the current default defun-mode is for ACL2, i.e., if you are already in program
 mode, it will default to program mode, etc.</p>
 
+<p>The optional @(':already-definedp') keyword can be set if you have already
+defined the function.  This can be used to generate all of the ordinary
+@('defmapappend') theorems without generating a @('defund') event, and is
+useful when you are dealing with mutually recursive transformations.</p>
+
 <p>The optional @(':transform-true-list-p') argument can be set to @('t')
 whenever the transformation is known to unconditionally produce a true list,
 and allows us to slightly optimize our function.</p>
@@ -160,6 +176,7 @@ add theorems into the same section.</p>")
 (defun defmapappend-fn (name formals transform
                              guard verify-guards
                              transform-exec transform-true-list-p
+                             already-definedp
                              mode
                              parents short long
                              rest
@@ -233,39 +250,41 @@ add theorems into the same section.</p>")
 
        (short (or short
                   (and parents
-                       (str::cat "@(call " (symbol-name name)
-                                 ") applies @(see " (symbol-name transform-fn)
-                                 ") to every member of the list @('x'), "
-                                 "and appends together all the resulting lists."))))
+                       (concatenate 'string  "@(call " (xdoc::full-escape-symbol name)
+                                    ") applies @(see? " (xdoc::full-escape-symbol transform-fn)
+                                    ") to every member of the list @('x'), "
+                                    "and appends together all the resulting lists."))))
 
        (long (or long
                  (and parents
-                      (str::cat "<p>This is an ordinary @(see std::defmapappend).</p>"
-                                "@(def " (symbol-name name) ")"))))
+                      (concatenate 'string  "<p>This is an ordinary @(see std::defmapappend).</p>"
+                                   "@(def " (xdoc::full-escape-symbol name) ")"))))
 
        (def
-        `((defund ,exec-fn (,@formals ,acc)
-            (declare (xargs :guard ,guard
-                            :verify-guards nil))
-            (if (consp ,x)
-                (,exec-fn ,@(subst `(cdr ,x) x formals)
-                          ,(if transform-exec
-                               `(,transform-exec ,@(subst `(car ,x) x transform-args) ,acc)
-                             `(,(if transform-true-list-p
-                                    'revappend
-                                  'revappend-without-guard)
-                               (,transform-fn . ,(subst `(car ,x) x transform-args))
-                               ,acc)))
-              ,acc))
+        (if already-definedp
+            nil
+          `((defund ,exec-fn (,@formals ,acc)
+              (declare (xargs :guard ,guard
+                              :verify-guards nil))
+              (if (consp ,x)
+                  (,exec-fn ,@(subst `(cdr ,x) x formals)
+                            ,(if transform-exec
+                                 `(,transform-exec ,@(subst `(car ,x) x transform-args) ,acc)
+                               `(,(if transform-true-list-p
+                                      'revappend
+                                    'revappend-without-guard)
+                                 (,transform-fn . ,(subst `(car ,x) x transform-args))
+                                 ,acc)))
+                ,acc))
 
-          (defund ,name (,@formals)
-            (declare (xargs :guard ,guard
-                            :verify-guards nil))
-            (mbe :logic (if (consp ,x)
-                            (append (,transform-fn . ,(subst `(car ,x) x transform-args))
-                                    (,name . ,(subst `(cdr ,x) x formals)))
-                          nil)
-                 :exec (reverse (,exec-fn ,@formals nil))))))
+            (defund ,name (,@formals)
+              (declare (xargs :guard ,guard
+                              :verify-guards nil))
+              (mbe :logic (if (consp ,x)
+                              (append (,transform-fn . ,(subst `(car ,x) x transform-args))
+                                      (,name . ,(subst `(cdr ,x) x formals)))
+                            nil)
+                   :exec (reverse (,exec-fn ,@formals nil)))))))
 
        ((when (eq mode :program))
         `(defsection ,name
@@ -291,20 +310,22 @@ add theorems into the same section.</p>")
                            (,name . ,formals)))
             :hints(("Goal" :in-theory (enable ,name))))
 
-          (local (defthm lemma
-                   (implies (true-listp ,acc)
-                            (true-listp (,exec-fn ,@formals ,acc)))
-                   :hints(("Goal" :in-theory (enable ,exec-fn)))))
+          ,@(if already-definedp
+                nil
+              `((local (defthm lemma
+                         (implies (true-listp ,acc)
+                                  (true-listp (,exec-fn ,@formals ,acc)))
+                         :hints(("Goal" :in-theory (enable ,exec-fn)))))
 
-          (defthm ,(mksym exec-fn '-removal)
-            (equal (,exec-fn ,@formals ,acc)
-                   (append (rev (,name ,@formals)) ,acc))
-            :hints(("Goal" :in-theory (enable ,exec-fn))))
+                (defthm ,(mksym exec-fn '-removal)
+                  (equal (,exec-fn ,@formals ,acc)
+                         (append (rev (,name ,@formals)) ,acc))
+                  :hints(("Goal" :in-theory (enable ,exec-fn))))
 
-          ,@(if verify-guards
-                `((verify-guards ,exec-fn)
-                  (verify-guards ,name))
-              nil)
+                . ,(if verify-guards
+                       `((verify-guards ,exec-fn)
+                         (verify-guards ,name))
+                     nil)))
 
           (defthm ,(mksym name '-of-list-fix)
             (equal (,name . ,(subst `(list-fix ,x) x formals))
@@ -336,6 +357,7 @@ add theorems into the same section.</p>")
                              (transform-true-list-p 't)
                              (guard 't)
                              (verify-guards 't)
+                             already-definedp
                              mode
                              (parents 'nil parents-p)
                              (short 'nil)
@@ -349,6 +371,7 @@ add theorems into the same section.</p>")
                  (defmapappend-fn ',name ',formals ',transform
                    ',guard ',verify-guards
                    ',transform-exec ',transform-true-list-p
+                   ',already-definedp
                    mode
                    parents ',short ',long
                    ',rest))))

@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original authors: Jared Davis <jared@centtech.com>
 ;                   Sol Swords <sswords@centtech.com>
@@ -91,7 +101,7 @@ destructive, under-the-hood operations.</p>
 tail-recursive version.</li>
 
 <li>Runtime &mdash; perhaps around 1.3x worse than @('reverse') due to the
-@(see stobj) overhead.</li>
+@(see acl2::stobj) overhead.</li>
 
 </ul>
 
@@ -104,8 +114,8 @@ solution:</p>
 problem.</li>
 
 <li>Runtime &mdash; perhaps around 1.25x worse than @('nreverse') due to the
-@(see stobj) overhead, but still faster than a traditional @('reverse') based
-solution.</li>
+@(see acl2::stobj) overhead, but still faster than a traditional @('reverse')
+based solution.</li>
 
 </ul>
 
@@ -321,9 +331,25 @@ nrev)."
 
 (defsection nrev2
   :parents (nrev)
-  :short "An extra @(see nrev) created with @(see defstobj-clone)."
+  :short "An extra @(see nrev) created with @(see acl2::defstobj-clone)."
   :long "<p>This may be useful if you need two @(see nrev) stobjs at once.</p>
 @(def nrev2)"
 
   :autodoc nil
   (acl2::defstobj-clone nrev2 nrev :suffix "2"))
+
+
+(defsection nrev-append
+  :parents (nrev)
+  :short "Add several elements into @('nrev') at once."
+  :long "<p>We just leave this enabled.</p>"
+
+  (defun nrev-append (x nrev)
+    (declare (xargs :guard t :stobjs nrev))
+    (mbe :logic
+         (non-exec (append nrev (list-fix x)))
+         :exec
+         (if (atom x)
+             (nrev-fix nrev)
+           (let ((nrev (nrev-push (car x) nrev)))
+             (nrev-append (cdr x) nrev))))))

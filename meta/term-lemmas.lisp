@@ -1,19 +1,6 @@
 ; ACL2 books on arithmetic metafunctions
 ; Copyright (C) 1997  Computational Logic, Inc.
-
-; This book is free software; you can redistribute it and/or modify
-; it under the terms of the GNU General Public License as published by
-; the Free Software Foundation; either version 2 of the License, or
-; (at your option) any later version.
-
-; This book is distributed in the hope that it will be useful,
-; but WITHOUT ANY WARRANTY; without even the implied warranty of
-; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-; GNU General Public License for more details.
-
-; You should have received a copy of the GNU General Public License
-; along with this book; if not, write to the Free Software
-; Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+; License: A 3-clause BSD license.  See the LICENSE file distributed with ACL2.
 
 ; Written by:  John Cowles and Matt Kaufmann
 ; Computational Logic, Inc.
@@ -25,6 +12,7 @@
 (in-package "ACL2")
 
 (include-book "term-defuns")
+(include-book "pseudo-termp-lemmas")
 
 (defthm delete-non-member
   (implies (not (memb x y))
@@ -94,3 +82,44 @@
   (equal (fringe-occur binop arg term)
          (memb arg (binary-op_fringe binop term))))
 
+
+(defthm pseudo-termp-term-list-to-type-term
+  (implies (and (pseudo-term-listp x)
+		(symbolp unary-op-name))
+           (pseudo-termp (term-list-to-type-term unary-op-name x))))
+
+(defthm pseudo-term-listp-del
+  (implies (pseudo-term-listp x)
+           (pseudo-term-listp (del a x))))
+
+(defthm pseudo-term-listp-bagdiff
+  (implies (pseudo-term-listp x)
+           (pseudo-term-listp (bagdiff x y))))
+
+(defthm pseudo-term-listp-bagint
+  (implies (pseudo-term-listp x)
+           (pseudo-term-listp (bagint x y))))
+
+(defthm pseudo-term-listp-binary-op_fringe
+  (implies (and (symbolp binary-op-name)
+		(not (equal binary-op-name 'quote))
+		(pseudo-termp x))
+           (pseudo-term-listp (binary-op_fringe binary-op-name x))))
+
+(defthm psuedo-termp-binary-op_tree
+  (implies (and (pseudo-term-listp l)
+		(symbolp binary-op-name)
+                (symbolp fix-name)
+                (not (equal binary-op-name 'quote))
+		(atom constant-name))
+           (pseudo-termp (binary-op_tree binary-op-name constant-name fix-name l)))
+  :rule-classes
+  (:rewrite
+   (:forward-chaining
+    :trigger-terms
+    ((binary-op_tree binary-op-name constant-name fix-name l)))))
+
+(defthm
+  pseudo-term-listp-remove-duplicates-memb
+  (implies (pseudo-term-listp lst)
+	   (pseudo-term-listp (remove-duplicates-memb lst))))

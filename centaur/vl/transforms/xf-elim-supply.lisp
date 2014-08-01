@@ -6,23 +6,32 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
 (in-package "VL")
-(include-book "xf-subst")
+(include-book "../mlib/subst")
 (include-book "../mlib/find-item")
 (local (include-book "../util/arithmetic"))
-
 
 (defxdoc elim-supplies
   :parents (transforms)
@@ -55,14 +64,13 @@ value.</p>")
 
 (local (xdoc::set-default-parents elim-supplies))
 
-
 (define vl-collect-supplies
   ((x         vl-netdecllist-p)
    (portdecls vl-portdecllist-p)
    (palist    (equal palist (vl-portdecl-alist portdecls)))
    (warnings  vl-warninglist-p))
   :returns
-  (mv (warnings vl-warninglist-p :hyp (vl-warninglist-p warnings))
+  (mv (warnings vl-warninglist-p)
       (netdecls vl-netdecllist-p
                 "The non-supply netdecls, which should be kept."
                 :hyp (vl-netdecllist-p x)
@@ -74,7 +82,7 @@ value.</p>")
                 :hyp (vl-netdecllist-p x)
                 :hints(("Goal" :in-theory (disable (force))))))
   (b* (((when (atom x))
-        (mv warnings nil nil nil))
+        (mv (ok) nil nil nil))
        ((mv warnings rest-decls rest-supply0 rest-supply1)
         (vl-collect-supplies (cdr x) portdecls palist warnings))
        (type  (vl-netdecl->type (car x)))
@@ -90,13 +98,9 @@ value.</p>")
 ; ever try to write.  We don't eliminate the supply, we just leave it as is,
 ; but we add a warning.
 
-           (mv (cons (make-vl-warning
-                      :type :vl-bad-supply
+           (mv (fatal :type :vl-bad-supply
                       :msg "~a0: we do not support supplies with ranges."
-                      :args (list (car x))
-                      :fatalp t
-                      :fn 'vl-collect-supplies)
-                     warnings)
+                      :args (list (car x)))
                (cons (car x) rest-decls)
                rest-supply0
                rest-supply1)
@@ -114,12 +118,9 @@ value.</p>")
 ; just are going to convert the wire declaration into a plain declaration.
 
                (if (not (eq (vl-portdecl->dir portdecl) :vl-input))
-                   (mv (cons (make-vl-warning
-                              :type :vl-bad-supply
+                   (mv (fatal :type :vl-bad-supply
                               :msg "~a0: we do not support supplies as ports."
-                              :args (list (car x))
-                              :fatalp t)
-                             warnings)
+                              :args (list (car x)))
                        (cons (car x) rest-decls)
                        rest-supply0
                        rest-supply1)
@@ -167,8 +168,7 @@ value.</p>")
        (palist    (vl-portdecl-alist portdecls))
        ((mv warnings-prime new-decls supply0s supply1s)
         (vl-collect-supplies netdecls portdecls palist warnings))
-       (-
-        (flush-hons-get-hash-table-link palist))
+       (- (fast-alist-free  palist))
        ((when (and (not supply0s)
                    (not supply1s)
                    (equal warnings warnings-prime)))
@@ -193,18 +193,16 @@ value.</p>")
        (x-prime (change-vl-module x
                                   :netdecls new-decls
                                   :warnings warnings-prime)))
-      (vl-module-subst x-prime sigma))
-  ///
-  (defthm vl-module->name-of-vl-module-elim-supplies
-    (equal (vl-module->name (vl-module-elim-supplies x))
-           (vl-module->name x))))
+      (vl-module-subst x-prime sigma)))
 
 (defprojection vl-modulelist-elim-supplies (x)
   (vl-module-elim-supplies x)
   :guard (vl-modulelist-p x)
-  :result-type vl-modulelist-p
-  ///
-  (defthm vl-modulelist->names-of-vl-modulelist-elim-supplies
-    (equal (vl-modulelist->names (vl-modulelist-elim-supplies x))
-           (vl-modulelist->names x))))
+  :result-type vl-modulelist-p)
+
+(define vl-design-elim-supplies ((x vl-design-p))
+  :returns (new-x vl-design-p)
+  (b* ((x (vl-design-fix x))
+       ((vl-design x) x))
+    (change-vl-design x :mods (vl-modulelist-elim-supplies x.mods))))
 

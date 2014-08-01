@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -171,7 +181,7 @@
   (b* ((short    (or (cdr (assoc :short topic)) ""))
        (base-pkg (cdr (assoc :base-pkg topic)))
        (name     (cdr (assoc :name topic)))
-       ((mv short-rchars state) (preprocess-main short nil topics-fal base-pkg state nil))
+       ((mv short-rchars state) (preprocess-main short name topics-fal base-pkg state nil))
        (short-str (str::rchars-to-string short-rchars))
        ((mv err &) (parse-xml short-str))
        (state
@@ -200,7 +210,7 @@
   (b* ((long     (or (cdr (assoc :long topic)) ""))
        (base-pkg (cdr (assoc :base-pkg topic)))
        (name     (cdr (assoc :name topic)))
-       ((mv long-rchars state) (preprocess-main long nil topics-fal base-pkg state nil))
+       ((mv long-rchars state) (preprocess-main long name topics-fal base-pkg state nil))
        (long-str (str::rchars-to-string long-rchars))
        ((mv err &) (parse-xml long-str))
        (state
@@ -385,10 +395,15 @@
                   (clean-topics topics)))))
 
        (- (cw "; Saving JSON files for ~x0 topics.~%" (len topics)))
-       ((mv topics xtopics state)
+       ((mv topics xtopics sitemap state)
         (time$ (order-topics-by-importance topics state)
                :msg "; Importance sorting topics: ~st sec, ~sa bytes.~%"
                :mintime 1/2))
+
+       (smfile (oslib::catpath dir "sitemap.xml"))
+       ((mv channel state) (open-output-channel smfile :character state))
+       (state (princ$ sitemap channel state))
+       (state (close-output-channel channel state))
 
        (lcfile (oslib::catpath dir "linkcheck.html"))
        ((mv channel state) (open-output-channel lcfile :character state))
@@ -471,6 +486,7 @@
                                                 "print.html"
                                                 "printer.png"
                                                 "render.js"
+                                                "render-html.xsl"
                                                 "style.css"
                                                 "view_flat.png"
                                                 "view_tree.png"
@@ -479,8 +495,10 @@
                                                 "xslt.js"
                                                 "xdoc_index.js"
                                                 "xdataget.pl"
+                                                "xdata2html.pl"
                                                 "xdata2sql.pl"
                                                 "zip.sh"
+                                                ".htaccess"
                                                 )
                                           dir state))
 
@@ -503,11 +521,19 @@
                                           dir/images state)))
     state))
 
+(defttag :xdoc) ; for sys-call+ call below
 
 (defun run-fancy-zip (dir state)
   (b* ((- (cw "; XDOC: Running zip.sh to create download/ directory.~%"))
+       ;; We formerly used oslib::catpath here.  However, David Rager reported
+       ;; (2014-06-24) that this caused failures when using directories such as
+       ;; "~/public_html", because the ~ doesn't get wildcard expanded in all
+       ;; Lisps, e.g., CCL.  So, we now use ACL2's extend-pathname, since it
+       ;; gets rid of the ~ characters.
+       (dir-fix (acl2::extend-pathname dir "." state))
+       (zip.sh  (acl2::extend-pathname dir-fix "zip.sh" state))
        ((mv erp val state)
-        (time$ (sys-call+ "sh" (list (oslib::catpath dir "zip.sh") dir) state)
+        (time$ (sys-call+ "sh" (list zip.sh dir-fix) state)
                :msg "; XDOC zip.sh: ~st sec, ~sa bytes.~%"))
        ((when erp)
         (er hard? 'run-fancy-zip

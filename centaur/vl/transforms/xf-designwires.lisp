@@ -1,20 +1,30 @@
 ; VL Verilog Toolkit
-; Copyright (C) 2008-2011 Centaur Technology
+; Copyright (C) 2008-2014 Centaur Technology
 ;
 ; Contact:
 ;   Centaur Technology Formal Verification Group
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -42,9 +52,10 @@ vl-atts-p)'>attribute</see>.</p>
 they will not have this attribute.  Hence, you can check for this attribute to
 tell whether a wire was in the original design.</p>")
 
+(local (xdoc::set-default-parents designwires))
+
 (define vl-netdecl-designwires ((x vl-netdecl-p))
   :returns (new-x vl-netdecl-p :hyp :fguard)
-  :parents (designwires)
   :short "Add a @('VL_DESIGN_WIRE') attribute to a @(see vl-netdecl-p)."
   (b* (((vl-netdecl x) x)
        ((when (assoc-equal "VL_DESIGN_WIRE" x.atts))
@@ -57,30 +68,26 @@ tell whether a wire was in the original design.</p>")
   (vl-netdecl-designwires x)
   :guard (vl-netdecllist-p x)
   :result-type vl-netdecllist-p
-  :nil-preservingp nil
-  :parents (designwires))
+  :nil-preservingp nil)
 
-(define vl-regdecl-designwires ((x vl-regdecl-p))
-  :returns (new-x vl-regdecl-p :hyp :fguard)
-  :parents (designwires)
-  :short "Add a @('VL_DESIGN_WIRE') attribute to a @(see vl-regdecl-p)."
-  (b* (((vl-regdecl x) x)
+(define vl-vardecl-designwires ((x vl-vardecl-p))
+  :returns (new-x vl-vardecl-p :hyp :fguard)
+  :short "Add a @('VL_DESIGN_WIRE') attribute to a @(see vl-vardecl-p)."
+  (b* (((vl-vardecl x) x)
        ((when (assoc-equal "VL_DESIGN_WIRE" x.atts))
         ;; For idempotency, don't add it again.
         x)
        (atts (acons "VL_DESIGN_WIRE" nil x.atts)))
-    (change-vl-regdecl x :atts atts)))
+    (change-vl-vardecl x :atts atts)))
 
-(defprojection vl-regdecllist-designwires (x)
-  (vl-regdecl-designwires x)
-  :guard (vl-regdecllist-p x)
-  :result-type vl-regdecllist-p
-  :nil-preservingp nil
-  :parents (designwires))
+(defprojection vl-vardecllist-designwires (x)
+  (vl-vardecl-designwires x)
+  :guard (vl-vardecllist-p x)
+  :result-type vl-vardecllist-p
+  :nil-preservingp nil)
 
 (define vl-module-designwires ((x vl-module-p))
   :returns (new-x vl-module-p :hyp :fguard)
-  :parents (designwires)
   :short "Add a @('VL_DESIGN_WIRE') attribute to every net and reg declaration
 in a module."
   (b* (((vl-module x) x)
@@ -88,20 +95,16 @@ in a module."
         x))
     (change-vl-module x
                       :netdecls (vl-netdecllist-designwires x.netdecls)
-                      :regdecls (vl-regdecllist-designwires x.regdecls)))
-  ///
-  (defthm vl-module->name-of-vl-module-designwires
-    (equal (vl-module->name (vl-module-designwires x))
-           (vl-module->name x))))
+                      :vardecls (vl-vardecllist-designwires x.vardecls))))
 
 (defprojection vl-modulelist-designwires (x)
   (vl-module-designwires x)
   :guard (vl-modulelist-p x)
   :result-type vl-modulelist-p
-  :nil-preservingp nil
-  :parents (designwires)
-  :rest
-  ((defthm vl-modulelist->names-of-vl-modulelist-designwires
-     (equal (vl-modulelist->names (vl-modulelist-designwires x))
-            (vl-modulelist->names x)))))
+  :nil-preservingp nil)
 
+(define vl-design-designwires ((x vl-design-p))
+  :returns (new-x vl-design-p)
+  (b* ((x (vl-design-fix x))
+       ((vl-design x) x))
+    (change-vl-design x :mods (vl-modulelist-designwires x.mods))))

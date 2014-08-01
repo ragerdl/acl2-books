@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -22,42 +32,18 @@
 (include-book "coerce")
 (include-book "std/lists/equiv" :dir :system)
 (include-book "std/lists/rev" :dir :system)
+(include-book "centaur/fty/fixtype" :dir :system)
+(include-book "centaur/fty/basetypes" :dir :system)
+
 (local (include-book "arithmetic"))
 
 (in-theory (disable char<))
-
-(define chareqv (x y)
-  :returns equivp
-  :parents (equivalences)
-  :short "Case-sensitive character equivalence test."
-
-  :long "<p>@(call chareqv) determines if @('x') and @('y') are equivalent when
-interpreted as characters.  That is, non-characters are first coerced to be the
-NUL character (via @(see char-fix)), then we see if these coerced arguments are
-equal.</p>
-
-<p>See also @(see ichareqv) for a case-insensitive alternative.</p>"
-  :inline t
-  (eql (char-fix x) (char-fix y))
-  ///
-  (local (in-theory (enable char-fix char<)))
-
-  (defequiv chareqv)
-
-  (defthm chareqv-of-char-fix
-    (chareqv (char-fix x) x))
-
-  (defcong chareqv equal (char-fix x) 1)
-  (defcong chareqv equal (char-code x) 1)
-  (defcong chareqv equal (char< x y) 1)
-  (defcong chareqv equal (char< x y) 2))
-
 
 (defsection char<-order-thms
   :parents (char<)
   :short "Basic ordering facts about @('char<')."
 
-  (local (in-theory (enable char<)))
+  (local (in-theory (enable char< char-fix)))
 
   (defthm char<-irreflexive
     (equal (char< x x)
@@ -183,54 +169,55 @@ same length and their elements must be @(see chareqv) to one another.</p>
              (not (charlisteqv x y)))))
 
 
-(define str-fix (x)
-  :returns (str stringp :rule-classes :type-prescription)
-  :parents (equivalences)
-  :short "Coerce to a string."
-  :long "<p>@(call str-fix) is the identity on @(see acl2::stringp)s, or
-returns the empty string, @('\"\"'), for any non-string.</p>
+;; BOZO kind of misplaced
 
-<p>This is similar to other fixing functions like @(see fix) and @(see nfix).
-See also @(see streqv).</p>"
-  :inline t
-  (if (stringp x)
-      x
-    "")
+(defcong streqv equal (explode x) 1
+  :hints(("Goal" :in-theory (enable streqv str-fix))))
+
+(fty::deffixtype character-list
+  :pred character-listp
+  :fix make-character-list
+  :equiv charlisteqv)
+
+(define string-list-fix ((x string-listp))
+  :returns (x-fix string-listp)
+  (mbe :logic (if (atom x)
+                  nil
+                (cons (str-fix (car x))
+                      (string-list-fix (cdr x))))
+       :exec x)
   ///
-  (defthm str-fix-default
-    (implies (not (stringp x))
-             (equal (str-fix x)
-                    "")))
+  (defthm string-list-fix-when-atom
+    (implies (atom x)
+             (equal (string-list-fix x)
+                    nil)))
+  (defthm string-list-fix-of-cons
+    (equal (string-list-fix (cons a x))
+           (cons (str-fix a) (string-list-fix x))))
+  (defthm string-list-fix-when-string-listp
+    (implies (string-listp x)
+             (equal (string-list-fix x)
+                    x)))
+  (defthm consp-of-string-list-fix
+    (equal (consp (string-list-fix x))
+           (consp x)))
+  (defthm len-of-string-list-fix
+    (equal (len (string-list-fix x))
+           (len x))))
 
-  (defthm str-fix-when-stringp
-    (implies (stringp x)
-             (equal (str-fix x)
-                    x))))
+(defsection string-list-equiv
 
+  (local (in-theory (enable string-list-fix)))
 
-(define streqv (x y)
-  :returns (equivp)
-  :parents (equivalences)
-  :short "Case-sensitive string equivalence test."
+  (fty::deffixtype string-list
+    :pred string-listp
+    :fix string-list-fix
+    :equiv string-list-equiv
+    :define t
+    :forward t)
 
-  :long "<p>@(call streqv) determines if @('x') and @('y') are equivalent when
-interpreted as strings.  That is, non-strings are first coerced to be the empty
-string (via @(see str-fix)), then we see if these coerced arguments are
-equal.</p>
-
-<p>See also @(see istreqv) for a case-insensitive alternative.</p>"
-  :inline t
-  (equal (str-fix x) (str-fix y))
-  ///
-  (local (in-theory (enable str-fix)))
-
-  (defequiv streqv)
-
-  (defthm streqv-of-str-fix
-    (streqv (str-fix x) x))
-
-  (defcong streqv equal (char x n) 1)
-  (defcong streqv equal (explode x) 1)
-  (defcong streqv equal (string-append x y) 1)
-  (defcong streqv equal (string-append x y) 2))
+  (fty::deffixcong string-list-equiv streqv (car x) x)
+  (fty::deffixcong string-list-equiv string-list-equiv (cdr x) x)
+  (fty::deffixcong streqv string-list-equiv (cons x y) x)
+  (fty::deffixcong string-list-equiv string-list-equiv (cons x y) y))
 

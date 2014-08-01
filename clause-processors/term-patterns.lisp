@@ -6,20 +6,32 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Sol Swords <sswords@centtech.com>
 
 
 (in-package "ACL2")
+
+(include-book "meta/pseudo-termp-lemmas" :dir :system)
 
 ;; This book establishes a table for the purpose of storing patterns that allow
 ;; us to recognize terms of some sort, and it provides a pattern-matching
@@ -133,30 +145,18 @@
 
 (verify-guards term-pattern-match)
 
-(defun pseudo-term-val-alistp (x)
-  (declare (xargs :guard t))
-  (if (atom x)
-      (eq x nil)
-    (and (consp (car x))
-         (pseudo-termp (cdar x))
-         (pseudo-term-val-alistp (cdr x)))))
-
-(defthm assoc-pseudo-term-val-alistp
-  (implies (pseudo-term-val-alistp x)
-           (pseudo-termp (cdr (assoc k x)))))
-
 (defthm-term-pattern-match-flag
-  term-pattern-match-flag-pseudo-term-val-alistp
+  term-pattern-match-flag-pseudo-term-substp
   (term-pattern-match
    (implies (and (pseudo-termp x)
-                 (pseudo-term-val-alistp acc))
-            (pseudo-term-val-alistp (term-pattern-match x pat acc)))
-   :name term-pattern-match-pseudo-term-val-alistp)
+                 (pseudo-term-substp acc))
+            (pseudo-term-substp (term-pattern-match x pat acc)))
+   :name term-pattern-match-pseudo-term-substp)
   (term-pattern-match-list
    (implies (and (pseudo-term-listp x)
-                 (pseudo-term-val-alistp acc))
-            (pseudo-term-val-alistp (term-pattern-match-list x pat acc)))
-   :name term-pattern-match-list-pseudo-term-val-alistp)
+                 (pseudo-term-substp acc))
+            (pseudo-term-substp (term-pattern-match-list x pat acc)))
+   :name term-pattern-match-list-pseudo-term-substp)
   :hints (("goal" :induct (term-pattern-match-flag flag x pat acc))))
 
 
@@ -168,17 +168,17 @@
     (or (term-pattern-match x (car pats) '((& . &)))
         (match-term-pattern x (cdr pats)))))
 
-(defthm pseudo-term-val-alistp-match-term-pattern
+(defthm pseudo-term-substp-match-term-pattern
   (implies (pseudo-termp x)
-           (pseudo-term-val-alistp (match-term-pattern x pats))))
+           (pseudo-term-substp (match-term-pattern x pats))))
 
 (defun term-matches (term name world)
   (match-term-pattern
    term
    (cdr (assoc name (table-alist 'term-patterns world)))))
 
-(defthm pseudo-term-val-alistp-term-matches
+(defthm pseudo-term-substp-term-matches
   (implies (pseudo-termp x)
-           (pseudo-term-val-alistp (term-matches x name world))))
+           (pseudo-term-substp (term-matches x name world))))
 
 (in-theory (disable match-term-pattern term-pattern-match term-matches))

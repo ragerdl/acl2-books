@@ -2,13 +2,10 @@
 
 (in-package "GL")
 (include-book "generic-geval")
-(include-book "symbolic-arithmetic-fns")
+(include-book "symbolic-arithmetic")
 (include-book "shape-spec-defs")
 (include-book "gl-mbe")
 
-(defun gl-hide (x)
-  (declare (xargs :guard t))
-  x)
 
 (defun gl-cp-hint (x)
   (declare (ignore x))

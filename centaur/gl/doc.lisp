@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; doc.lisp
 ;
@@ -103,35 +113,7 @@ interested in some tools and techniques for @(see debugging) failed proofs.</p>
 
 <p>If you want to go further with GL, you will probably want to explore @(see
 other-resources) beyond just this documentation, which include Sol Swords'
-Ph.D. dissertation, as well as many other academic papers and talks.</p>
-
-
-<h3>Copyright Information</h3>
-
-<p>GL &mdash; A Symbolic Simulation Framework for ACL2<br/>
-Copyright (C) 2008-2013 <a href=\"http://www.centtech.com\">Centaur
-Technology</a>.</p>
-
-<p>Contact:</p>
-@({
-Centaur Technology Formal Verification Group
-7600-C N. Capital of Texas Highway, Suite 300
-Austin, TX 78731, USA.
-})
-
-<p>This program is free software; you can redistribute it and/or modify it
-under the terms of the GNU General Public License as published by the Free
-Software Foundation; either version 2 of the License, or (at your option) any
-later version.</p>
-
-<p>This program is distributed in the hope that it will be useful but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
-details.</p>
-
-<p>You should have received a copy of the GNU General Public License along with
-this program; if not, write to the Free Software Foundation, Inc., 51 Franklin
-Street, Suite 500, Boston, MA 02110-1335, USA.</p>")
+Ph.D. dissertation, as well as many other academic papers and talks.</p>")
 
 
 (defxdoc reference
@@ -841,7 +823,7 @@ executes the function in one of three ways:</p>
 
 <li>As a special case, if the actuals evaluate to concrete objects, then GL may
 be able to stop symbolically executing and just call the actual ACL2 function
-on these arguments; see @(see concrete-execution).</li>
+on these arguments.</li>
 
 <li>For primitive ACL2 functions like @(see +), @(see consp), @(see equal), and
 for some defined functions like @(see logand) and @(see ash) where performance
@@ -867,7 +849,12 @@ symbolically simulate functions that take user-defined stobjs or even the ACL2
 @(see state), it does not operate on \"real\" @(see acl2::stobj)s; instead, it
 uses the logical definitions of the relevant stobj operations, which do not
 provide the performance benefits of destructive operations.  Non-executable
-functions cannot be symbolically executed.</p>")
+functions cannot be symbolically executed.</p>
+
+<p>In the event that one is performing a very large decomposition proof (e.g.,
+the theorem @('boothmul-decomp-is-boothmul-via-GL') in book
+@('centaur/tutorial/boothmul.lisp'), one should consider using book
+@('centaur/esim/stv/stv-decomp-proofs').</p>")
 
 
 (defxdoc modes
@@ -1052,7 +1039,7 @@ definition instead, as described in the next section.</p>")
     (gl::set-preferred-def filter1 filter1-for-gl)
 })
 
-<p>The @(see gl::set-preferred-def) form extends a table that GL consults when
+<p>The @('set-preferred-def') form extends a table that GL consults when
 expanding a function's definition.  Each entry in the table pairs a function
 name with the name of a theorem.  The theorem must state that a call of the
 function is unconditionally equal to some other term.</p>
@@ -1524,7 +1511,7 @@ already done so).  Here is one rule that will accomplish that:</p>
                           0))))))))
 })
 
-<p>Performing this rewrite will causes GL to generate a Boolean variable for each
+<p>Performing this rewrite will cause GL to generate a Boolean variable for each
 of these LOGBITP terms, because they produce term-level objects that are then
 used in IF tests.</p>
 
@@ -1539,14 +1526,15 @@ that makes a series of terms take certain truth values, which is undecidable.
 In the next section, we describe a heuristic method for generating
 counterexamples that works in practice when applied carefully.</p>
 
-<p>Furthermore, unless this strategy is used with utmost care, it is likely that
-proofs will fail due to detection of \"counterexamples\" that are actually
+<p>Furthermore, unless this strategy is used with utmost care, it is likely
+that proofs will fail due to detection of \"counterexamples\" that are actually
 impossible.  For example, we might generate a Boolean variable for (integerp x)
 and another one for (logbitp 0 x).  But these two terms are not independent; in
-fact, (logbitp 0 x) implies (integerp x).  Currently, GL has no mechanism to
-pass this restriction to a SAT solver, so we may find false counterexamples
-that violate this constraint. This can't render GL unsound, but may lead to
-failed proofs.</p>
+fact, (logbitp 0 x) implies (integerp x).  If we don't let the SAT solver know
+about these constraints, it might find false counterexamples. This can't render
+GL unsound, but may lead to failed proofs.  You may provide rules for
+generating constraints among these Boolean variables to solve this kind of
+problem: see @(see def-gl-boolean-constraint).</p>
 
 <p>The situation described above (where every field is accessed via LOGHEAD and
 via concrete address) is a particularly good one for this strategy, since then

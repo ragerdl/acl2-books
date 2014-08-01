@@ -1,20 +1,30 @@
 ; VL Verilog Toolkit
-; Copyright (C) 2008-2011 Centaur Technology
+; Copyright (C) 2008-2014 Centaur Technology
 ;
 ; Contact:
 ;   Centaur Technology Formal Verification Group
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -25,7 +35,6 @@
 (include-book "../mlib/filter")
 (local (include-book "../util/arithmetic"))
 (local (include-book "../util/osets"))
-
 
 (defxdoc clean-params
   :parents (transforms)
@@ -112,17 +121,17 @@ structure."
   ((useless   vl-useless-params-p)
    (arguments vl-arguments-p))
   :returns (new-arguments vl-arguments-p :hyp (force (vl-arguments-p arguments)))
-  (b* (((vl-arguments arguments) arguments)
-       ((vl-useless-params useless) useless))
-    (if arguments.namedp
-        (vl-arguments t
-                      (vl-namedarglist-elim-useless-params useless.names
-                                                           arguments.args))
-    (vl-arguments nil
-                  (vl-plainarglist-elim-useless-params 0
-                                                       useless.positions
-                                                       arguments.args)))))
-
+  (b* (((vl-useless-params useless) useless))
+    (vl-arguments-case arguments
+      :named
+      (change-vl-arguments-named arguments
+                                 :args (vl-namedarglist-elim-useless-params useless.names
+                                                                            arguments.args))
+      :plain
+      (change-vl-arguments-plain arguments.args
+                                 :args (vl-plainarglist-elim-useless-params 0
+                                                                            useless.positions
+                                                                            arguments.args)))))
 
 (define vl-modinst-elim-useless-params ((x   vl-modinst-p)
                                         (map vl-useless-params-map-p))
@@ -169,12 +178,7 @@ structure."
   (vl-module-elim-useless-params x map)
   :guard (and (vl-modulelist-p x)
               (vl-useless-params-map-p map))
-  :result-type vl-modulelist-p
-  :rest
-  ((defthm vl-modulelist->names-of-vl-modulelist-elim-useless-params
-     (equal (vl-modulelist->names (vl-modulelist-elim-useless-params x map))
-            (vl-modulelist->names x)))))
-
+  :result-type vl-modulelist-p)
 
 
 (define vl-position-of-param
@@ -205,7 +209,6 @@ after identifying the names of the useless parameters.</p>"
   ///
   (defthm integer-listp-of-vl-positions-of-params
     (integer-listp (vl-positions-of-params names paramdecls))))
-
 
 (define vl-module-clean-params ((x vl-module-p))
   :returns
@@ -250,10 +253,10 @@ throughout the module list.</p>"
 
        ((unless useless-param-names)
         (mv x nil))
-       (- (cw "; Removing ~x0 unused parameters from ~s1: ~x2~%"
-              (len useless-param-names)
-              (vl-module->name x)
-              (mergesort useless-param-names)))
+       ;;(- (cw "; Removing ~x0 unused parameters from ~s1: ~x2~%"
+       ;;       (len useless-param-names)
+       ;;       (vl-module->name x)
+       ;;       (mergesort useless-param-names)))
 
        (useless-param-pos (vl-positions-of-params useless-param-names paramdecls))
 ;         (- (cw "; ~s0: eliminate ~&1 ~x2.~%"
@@ -268,11 +271,7 @@ throughout the module list.</p>"
     (mv x-prime useless-struct))
   ///
   (verify-guards vl-module-clean-params
-    :hints ((set-reasoning)))
-
-  (defthm vl-module->name-of-vl-module-clean-params
-    (equal (vl-module->name (mv-nth 0 (vl-module-clean-params x)))
-           (vl-module->name x))))
+    :hints ((set-reasoning))))
 
 
 (define vl-modulelist-clean-params-aux ((x vl-modulelist-p))
@@ -291,11 +290,7 @@ up from each module instance.)"
         (if car-entry
             (hons-acons (vl-module->name (car x)) car-entry map)
           map)))
-    (mv (cons car-prime cdr-prime) map))
-  ///
-  (defthm vl-modulelist->names-of-vl-modulelist-clean-params-aux
-    (equal (vl-modulelist->names (mv-nth 0 (vl-modulelist-clean-params-aux x)))
-           (vl-modulelist->names x))))
+    (mv (cons car-prime cdr-prime) map)))
 
 
 (define vl-modulelist-clean-params-loop ((x vl-modulelist-p)
@@ -319,18 +314,17 @@ up from each module instance.)"
        (x-prime (vl-modulelist-elim-useless-params x-prime map))
        (- (fast-alist-free map)))
 
-    (vl-modulelist-clean-params-loop x-prime (- n 1)))
-  ///
-  (defthm vl-modulelist->names-of-vl-modulelist-clean-params-loop
-    (equal (vl-modulelist->names (vl-modulelist-clean-params-loop x n))
-           (vl-modulelist->names x))))
-
+    (vl-modulelist-clean-params-loop x-prime (- n 1))))
 
 (define vl-modulelist-clean-params ((x vl-modulelist-p))
   :returns (new-x vl-modulelist-p :hyp :fguard)
-  (vl-modulelist-clean-params-loop x 100)
-  ///
-  (defthm vl-modulelist->names-of-vl-modulelist-clean-params
-    (equal (vl-modulelist->names (vl-modulelist-clean-params x))
-           (vl-modulelist->names x))))
+  (vl-modulelist-clean-params-loop x 100))
+
+(define vl-design-clean-params
+  :short "Top-level @(see clean-params) transform."
+  ((x vl-design-p))
+  :returns (new-x vl-design-p)
+  (b* ((x (vl-design-fix x))
+       ((vl-design x) x))
+    (change-vl-design x :mods (vl-modulelist-clean-params x.mods))))
 

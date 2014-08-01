@@ -1,20 +1,30 @@
 ; VL Verilog Toolkit
-; Copyright (C) 2008-2012 Centaur Technology
+; Copyright (C) 2008-2014 Centaur Technology
 ;
 ; Contact:
 ;   Centaur Technology Formal Verification Group
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -108,12 +118,14 @@ we're going to have to talk about bit @('0') of these compound expressions like
 see.  We also split up any wires where the widths of the lhs/rhs don't agree,
 so that later transforms just need to deal with compatible assignments.</p>")
 
-(define vl-assignstmt-stmttemps ((x     vl-assignstmt-p)
+(local (xdoc::set-default-parents stmttemps))
+
+(define vl-assignstmt-stmttemps ((x     vl-stmt-p)
                                  (delta vl-delta-p)
                                  (elem  vl-modelement-p))
-  :returns (mv (new-x vl-assignstmt-p :hyp :fguard)
-               (delta vl-delta-p      :hyp :fguard))
-  :parents (stmttemps)
+  :guard (eq (vl-stmt-kind x) :vl-assignstmt)
+  :returns (mv (new-x vl-stmt-p  :hyp :fguard)
+               (delta vl-delta-p :hyp :fguard))
   :short "Introduce temp wires for right-hand sides."
 
   (b* (((vl-assignstmt x) x)
@@ -166,16 +178,14 @@ so that later transforms just need to deal with compatible assignments.</p>")
 (define vl-ifstmt-stmttemps
   ((x     "any statement, but we only rewrite it when it's an if statement;
            this makes writing @(see vl-stmt-stmttemps) very simple."
-          (and (vl-stmt-p x)
-               (vl-compoundstmt-p x)))
+          vl-stmt-p)
    (delta vl-delta-p)
    (elem  vl-modelement-p))
   :returns (mv (new-x vl-stmt-p :hyp :fguard)
                (delta vl-delta-p :hyp :fguard))
-  :parents (stmttemps)
   :short "Introduce temp wires for if-statement conditions."
 
-  (b* (((unless (vl-ifstmt-p x))
+  (b* (((unless (eq (vl-stmt-kind x) :vl-ifstmt))
         ;; This makes the guards/basic-checks stuff for the caller very easy.
         (mv x delta))
 
@@ -220,94 +230,49 @@ so that later transforms just need to deal with compatible assignments.</p>")
                          :assigns  (cons temp-assign delta.assigns)
                          :netdecls (cons temp-decl delta.netdecls)))))
 
-(defsection vl-stmt-stmttemps
-  :parents (stmttemps)
+(defines vl-stmt-stmttemps
 
-  (mutual-recursion
+  (define vl-stmt-stmttemps ((x     vl-stmt-p)
+                             (delta vl-delta-p)
+                             (elem  vl-modelement-p))
+    :returns (mv (new-x vl-stmt-p :hyp :fguard)
+                 (delta vl-delta-p :hyp :fguard))
+    :verify-guards nil
+    :measure (vl-stmt-count x)
+    :flag :stmt
+    (b* (((when (vl-atomicstmt-p x))
+          (if (eq (vl-stmt-kind x) :vl-assignstmt)
+              (vl-assignstmt-stmttemps x delta elem)
+            (mv x delta)))
+         (substmts            (vl-compoundstmt->stmts x))
+         ((mv substmts delta) (vl-stmtlist-stmttemps substmts delta elem))
+         (x                   (change-vl-compoundstmt x :stmts substmts))
+         ((mv x delta)        (vl-ifstmt-stmttemps x delta elem)))
+      (mv x delta)))
 
-   (defund vl-stmt-stmttemps (x delta elem)
-     "Returns (mv new-x delta)"
-     (declare (xargs :guard (and (vl-stmt-p x)
-                                 (vl-delta-p delta)
-                                 (vl-modelement-p elem))
-                     :verify-guards nil
-                     :measure (two-nats-measure (acl2-count x) 1)))
-     (b* (((when (vl-fast-atomicstmt-p x))
-           (if (vl-fast-assignstmt-p x)
-               (vl-assignstmt-stmttemps x delta elem)
-             (mv x delta)))
+  (define vl-stmtlist-stmttemps ((x     vl-stmtlist-p)
+                                 (delta vl-delta-p)
+                                 (elem  vl-modelement-p))
+    :returns (mv (new-x (and (vl-stmtlist-p new-x)
+                             (equal (len new-x) (len x)))
+                        :hyp :fguard)
+                 (delta vl-delta-p :hyp :fguard))
+    :verify-guards nil
+    :measure (vl-stmtlist-count x)
+    :flag :list
+    (b* (((when (atom x))
+          (mv nil delta))
+         ((mv car delta) (vl-stmt-stmttemps (car x) delta elem))
+         ((mv cdr delta) (vl-stmtlist-stmttemps (cdr x) delta elem)))
+      (mv (cons car cdr) delta)))
 
-          (substmts            (vl-compoundstmt->stmts x))
-          ((mv substmts delta) (vl-stmtlist-stmttemps substmts delta elem))
-          (x                   (change-vl-compoundstmt x :stmts substmts))
-          ((mv x delta)        (vl-ifstmt-stmttemps x delta elem)))
-       (mv x delta)))
-
-   (defund vl-stmtlist-stmttemps (x delta elem)
-     "Returns (mv new-x delta)"
-     (declare (xargs :guard (and (vl-stmtlist-p x)
-                                 (vl-delta-p delta)
-                                 (vl-modelement-p elem))
-                     :verify-guards nil
-                     :measure (two-nats-measure (acl2-count x) 0)))
-     (b* (((when (atom x))
-           (mv nil delta))
-          ((mv car delta) (vl-stmt-stmttemps (car x) delta elem))
-          ((mv cdr delta) (vl-stmtlist-stmttemps (cdr x) delta elem)))
-       (mv (cons car cdr) delta))))
-
-  (flag::make-flag vl-flag-stmt-stmttemps
-                   vl-stmt-stmttemps
-                   :flag-mapping ((vl-stmt-stmttemps . stmt)
-                                  (vl-stmtlist-stmttemps . list)))
-
-  (local (defun my-induction (x delta elem)
-           (b* (((when (atom x))
-                 (mv nil delta))
-                ((mv car delta) (vl-stmt-stmttemps (car x) delta elem))
-                ((mv cdr delta) (my-induction (cdr x) delta elem)))
-             (mv (cons car cdr) delta))))
-
-  (defthm len-of-vl-stmtlist-stmttemps
-    (equal (len (mv-nth 0 (vl-stmtlist-stmttemps x delta elem)))
-           (len x))
-    :hints(("Goal"
-            :induct (my-induction x delta elem)
-            :expand (vl-stmtlist-stmttemps x delta elem))))
-
-  (defthm-vl-flag-stmt-stmttemps
-
-    (defthm return-type-of-vl-stmt-stmttemps
-      (implies (and (force (vl-stmt-p x))
-                    (force (vl-delta-p delta))
-                    (force (vl-modelement-p elem)))
-               (b* (((mv new-x delta)
-                     (vl-stmt-stmttemps x delta elem)))
-                 (and (vl-stmt-p new-x)
-                      (vl-delta-p delta))))
-      :flag stmt)
-
-    (defthm return-type-of-vl-stmtlist-stmttemps
-      (implies (and (force (vl-stmtlist-p x))
-                    (force (vl-delta-p delta))
-                    (force (vl-modelement-p elem)))
-               (b* (((mv new-x delta)
-                     (vl-stmtlist-stmttemps x delta elem)))
-                 (and (vl-stmtlist-p new-x)
-                      (vl-delta-p delta))))
-      :flag list)
-
-    :hints(("Goal"
-            :expand ((vl-stmt-stmttemps x delta elem)
-                     (vl-stmtlist-stmttemps x delta elem)))))
-
+  ///
   (verify-guards vl-stmt-stmttemps))
 
 (define vl-always-stmttemps ((x     vl-always-p)
                              (delta vl-delta-p))
   :returns (mv (new-x vl-always-p :hyp :fguard)
                (delta vl-delta-p  :hyp :fguard))
-  :parents (stmttemps)
   (b* (((vl-always x) x)
        ((mv clk ?body) (vl-match-posedge-clk x))
        ((unless clk)
@@ -321,7 +286,6 @@ so that later transforms just need to deal with compatible assignments.</p>")
                                   (delta vl-delta-p))
   :returns (mv (new-x vl-alwayslist-p :hyp :fguard)
                (delta vl-delta-p      :hyp :fguard))
-  :parents (stmttemps)
   (b* (((when (atom x))
         (mv x delta))
        ((mv car delta) (vl-always-stmttemps (car x) delta))
@@ -330,7 +294,6 @@ so that later transforms just need to deal with compatible assignments.</p>")
 
 (define vl-module-stmttemps ((x vl-module-p))
   :returns (new-x vl-module-p :hyp :fguard)
-  :parents (stmttemps)
   (b* (((vl-module x) x)
        ((when (vl-module->hands-offp x))
         x)
@@ -348,19 +311,17 @@ so that later transforms just need to deal with compatible assignments.</p>")
                       :alwayses alwayses
                       :assigns  delta.assigns
                       :netdecls delta.netdecls
-                      :warnings delta.warnings))
-  ///
-  (defthm vl-module->name-of-vl-module-stmttemps
-    (equal (vl-module->name (vl-module-stmttemps x))
-           (vl-module->name x))))
+                      :warnings delta.warnings)))
 
 (defprojection vl-modulelist-stmttemps (x)
   (vl-module-stmttemps x)
   :guard (vl-modulelist-p x)
-  :result-type vl-modulelist-p
-  :parents (stmttemps)
-  :rest
-  ((defthm vl-modulelist->names-of-vl-modulelist-stmttemps
-     (equal (vl-modulelist->names (vl-modulelist-stmttemps x))
-            (vl-modulelist->names x)))))
+  :result-type vl-modulelist-p)
 
+(define vl-design-stmttemps
+  :short "Top-level @(see stmttemps) transform."
+  ((x vl-design-p))
+  :returns (new-x vl-design-p)
+  (b* ((x (vl-design-fix x))
+       ((vl-design x) x))
+    (change-vl-design x :mods (vl-modulelist-stmttemps x.mods))))

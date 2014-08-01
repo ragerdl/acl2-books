@@ -1,20 +1,6 @@
 ; basic-definitions.lisp  --  extensions to Common Lisp logical operations
 ; Copyright (C) 1997  Computational Logic, Inc.
-
-; This book is free software; you can redistribute it and/or modify
-; it under the terms of the GNU General Public License as published by
-; the Free Software Foundation; either version 2 of the License, or
-; (at your option) any later version.
-
-; This book is distributed in the hope that it will be useful,
-; but WITHOUT ANY WARRANTY; without even the implied warranty of
-; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-; GNU General Public License for more details.
-
-; You should have received a copy of the GNU General Public License
-; along with this book; if not, write to the Free Software
-; Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-
+; License: A 3-clause BSD license.  See the LICENSE file distributed with ACL2.
 
 ;;;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;;
@@ -264,7 +250,8 @@
 
 (defun-inline logcar (i)
   ":doc-section logops-definitions
-  (LOGCAR i) is the CAR of an integer conceptualized as a bit-vector.
+  (LOGCAR i) is the CAR of an integer conceptualized as a bit-vector (where the
+  least significant bit is at the head of the list).
   ~/~/~/"
   (declare (xargs :guard (integerp i)))
   (mbe :logic (imod i 2)
@@ -272,7 +259,8 @@
 
 (defun-inline logcdr (i)
   ":doc-section logops-definitions
-  (LOGCDR i) is the CDR of an integer conceptualized as a bit-vector.
+  (LOGCDR i) is the CDR of an integer conceptualized as a bit-vector (where the
+  least significant bit is at the head of the list).
   ~/~/~/"
   (declare (xargs :guard (integerp i)))
   (mbe :logic (ifloor i 2)
@@ -281,7 +269,8 @@
 (defun-inline logcons (b i)
   ":doc-section logops-definitions
   (LOGCONS b i) is the CONS operation for integers conceptualized as
-  bit-vectors.
+  bit-vectors (where i is multiplied by 2 and b becomes the new least
+  significant bit).
   ~/
   For clarity and efficiency, b is required to be BITP.~/~/"
   (declare (xargs :guard (and (bitp b)

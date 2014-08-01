@@ -1,29 +1,49 @@
 ; VL Verilog Toolkit
-; Copyright (C) 2008-2011 Centaur Technology
+; Copyright (C) 2008-2014 Centaur Technology
 ;
 ; Contact:
 ;   Centaur Technology Formal Verification Group
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
 (in-package "VL")
 (include-book "echars")
+(include-book "std/util/defalist" :dir :system)
 
-(defsection vl-commentmap-p
-  :parents (modules)
-  :short "Representation of comments within a module."
+(fty::defalist vl-commentmap
+  :key-type vl-location-p
+  :val-type stringp)
+
+(defalist vl-commentmap-p (x)
+  :parents (syntax)
+  :short "Representation of comments within a top-level design elements."
+  :already-definedp t
+  :key (vl-location-p x)
+  :val (stringp x)
+  :keyp-of-nil nil
+  :valp-of-nil nil
 
   :long "<p>We might try to leave comments in the token stream and then try to
 preserve them as we parse by attaching them to various parse-tree structures.
@@ -118,58 +138,13 @@ comments to act as though they occur at the start of their line.</p>
 write an expression with lots of @('/* blah */')-style comments, inside of it,
 then these all get moved over to the front.  Bad stuff.  But such comments seem
 relatively rare anyway, and I am not too worried about trying to support
-them.</p>"
+them.</p>")
 
-  (defund vl-commentmap-p (x)
-    (declare (xargs :guard t))
-    (if (consp x)
-        (and (consp (car x))
-             (vl-location-p (caar x))
-             (stringp (cdar x))
-             (vl-commentmap-p (cdr x)))
-      (not x)))
+(defthm consp-of-car-when-vl-commentmap-p
+  ;; Not sure whether we need this, but it was something we previously had when
+  ;; I converted comment maps into a defalist.
+  (implies (vl-commentmap-p x)
+           (equal (consp (car x))
+                  (consp x)))
+  :rule-classes ((:rewrite :backchain-limit-lst 1)))
 
-  (defthm vl-commentmap-p-when-not-consp
-    (implies (not (consp x))
-             (equal (vl-commentmap-p x)
-                    (not x)))
-    :hints(("Goal" :in-theory (enable vl-commentmap-p))))
-
-  (defthm vl-commentmap-p-of-cons
-    (equal (vl-commentmap-p (cons a x))
-           (and (consp a)
-                (vl-location-p (car a))
-                (stringp (cdr a))
-                (vl-commentmap-p x)))
-    :hints(("Goal" :in-theory (enable vl-commentmap-p))))
-
-  (defthm vl-commentmap-p-of-cdr
-    (implies (vl-commentmap-p x)
-             (vl-commentmap-p (cdr x))))
-
-  (defthm vl-location-p-of-caar-when-vl-commentmap-p
-    (implies (vl-commentmap-p x)
-             (equal (vl-location-p (caar x))
-                    (consp x))))
-
-  (defthm stringp-of-cdar-when-vl-commentmap-p
-    (implies (vl-commentmap-p x)
-             (equal (stringp (cdar x))
-                    (consp x))))
-
-  (defthm consp-of-car-when-vl-commentmap-p
-    (implies (vl-commentmap-p x)
-             (equal (consp (car x))
-                    (consp x)))
-    :rule-classes ((:rewrite :backchain-limit-lst 1)))
-
-  (defthm vl-commentmap-p-of-append
-    (implies (and (force (vl-commentmap-p x))
-                  (force (vl-commentmap-p y)))
-             (vl-commentmap-p (append x y)))
-    :hints(("Goal" :induct (len x))))
-
-  (defthm vl-commentmap-p-of-rev
-    (implies (vl-commentmap-p x)
-             (vl-commentmap-p (rev x)))
-    :hints(("Goal" :induct (len x)))))

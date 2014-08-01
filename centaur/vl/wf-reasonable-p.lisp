@@ -1,20 +1,30 @@
 ; VL Verilog Toolkit
-; Copyright (C) 2008-2011 Centaur Technology
+; Copyright (C) 2008-2014 Centaur Technology
 ;
 ; Contact:
 ;   Centaur Technology Formal Verification Group
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -22,12 +32,12 @@
 (include-book "mlib/modnamespace")
 (include-book "mlib/find-item")
 (include-book "mlib/expr-tools")
+(include-book "mlib/range-tools")
 (include-book "util/defwellformed")
 (include-book "util/warnings")
 (include-book "defsort/duplicated-members" :dir :system)
 (local (include-book "util/arithmetic"))
 (local (include-book "util/osets"))
-
 
 (defxdoc reasonable
   :parents (well-formedness)
@@ -52,8 +62,6 @@ the small subset of Verilog that we actually encounter at Centaur.  There is
 little motivation for us to support things like complicated port lists merely
 because they are in the Verilog-2005 standard.</p>")
 
-
-
 (defwellformed vl-portlist-reasonable-p (x)
   :parents (reasonable)
   :short "@(call vl-portlist-reasonable-p) determines if a @(see vl-portlist-p)
@@ -69,7 +77,6 @@ number of additional well-formedness checks are done in @(see argresolve) and
                       :vl-bad-ports
                       "Duplicate port names: ~&0."
                       (list dupes))))
-
 
 (defwellformed vl-portdecl-reasonable-p (x)
   :parents (reasonable)
@@ -180,38 +187,17 @@ ranges, e.g., @('wire [7:0] w').  What we do not support are, e.g., @('wire w
   :parents (reasonable)
   :guard (vl-vardecl-p x)
   :extra-decls ((ignorable x))
-  :body (@wf-assert nil
-                    :vl-vardecl
-                    "~l0: variable declarations like ~s1 are not supported."
-                    (list (vl-vardecl->loc x)
-                          (vl-vardecl->name x))))
+  :body (b* (((vl-vardecl x) x))
+          (@wf-progn
+           (@wf-assert (vl-simplereg-p x)
+                       :vl-variable-toohard
+                       "~a0: variable declarations other than simple 'reg' or 'logic' wires ~
+                        are not yet supported."
+                       (list x)))))
 
 (defwellformed-list vl-vardecllist-reasonable-p (x)
   :element vl-vardecl-reasonable-p
   :guard (vl-vardecllist-p x)
-  :parents (reasonable))
-
-(defwellformed vl-regdecl-reasonable-p (x)
-  :parents (reasonable)
-  :guard (vl-regdecl-p x)
-  :body (let ((arrdims (vl-regdecl->arrdims x))
-              (name    (vl-regdecl->name x))
-              (loc     (vl-regdecl->loc x)))
-          (declare (ignorable name loc))
-
-          (@wf-progn
-
-; We don't try to support registers that have "arrdims" (i.e., register arrays)
-; instead of ranges (i.e., a multi-bit register).
-
-           (@wf-assert (not arrdims)
-                       :vl-regdecl-array
-                       "~l0: register ~s1 is an array, which is not supported."
-                       (list loc name)))))
-
-(defwellformed-list vl-regdecllist-reasonable-p (x)
-  :element vl-regdecl-reasonable-p
-  :guard (vl-regdecllist-p x)
   :parents (reasonable))
 
 (defwellformed vl-modinst-reasonable-p (x)
@@ -259,9 +245,7 @@ ranges, e.g., @('wire [7:0] w').  What we do not support are, e.g., @('wire w
 with some module item declaration, is a reasonable overlap."
   :guard (and (vl-portdecl-p portdecl)
               (or (vl-netdecl-p item)
-                  (vl-regdecl-p item)
                   (vl-vardecl-p item)
-                  (vl-eventdecl-p item)
                   (vl-paramdecl-p item)
                   (vl-fundecl-p item)
                   (vl-taskdecl-p item)
@@ -355,29 +339,39 @@ item.</p>"
                   (list (vl-portdecl->loc portdecl)
                         (vl-portdecl->name portdecl)))))
 
-    (:vl-regdecl
+    (:vl-vardecl
 
      (@wf-progn
+
+      (@wf-assert (vl-simplereg-p item)
+                  :vl-weird-port
+                  "~l0: port ~s1 is also declared to be a ~a2."
+                  (list (vl-portdecl->loc portdecl)
+                        (vl-portdecl->name portdecl)
+                        (vl-vardecl->vartype item)))
 
 ; Like for netdecls, this may be too severe, and will not permit us to "input
 ; [1+2:0] x;" followed by "reg [3:0] x;".  See also the "follow-up" in the
 ; netdecl case, above.
 
-      (@wf-assert (equal (vl-portdecl->range portdecl)
-                         (vl-regdecl->range item))
+
+      (@wf-assert (or (not (vl-simplereg-p item))
+                      (equal (vl-portdecl->range portdecl)
+                             (vl-simplereg->range item)))
                   :vl-incompatible-range
                   "~l0: port ~s1 is declared to have range ~a2, but is ~
                         also declared as a reg with range ~a3."
                   (list (vl-portdecl->loc portdecl)
                         (vl-portdecl->name portdecl)
                         (vl-portdecl->range portdecl)
-                        (vl-regdecl->range item)))
+                        (vl-simplereg->range item)))
 
 ; Make sure the signedness agrees; see the documentation in portdecl-sign for
 ; more information.
 
-      (@wf-assert (equal (vl-regdecl->signedp item)
-                         (vl-portdecl->signedp portdecl))
+      (@wf-assert (or (not (vl-simplereg-p item))
+                      (equal (vl-simplereg->signedp item)
+                             (vl-portdecl->signedp portdecl)))
                   :vl-incompatible-sign
                   "~l0: port declaration for ~s1 has signedp ~x2, while reg ~
                    declaration has signedp ~x3.  This case should have been ~
@@ -385,7 +379,7 @@ item.</p>"
                   (list (vl-portdecl->loc portdecl)
                         (vl-portdecl->name portdecl)
                         (vl-portdecl->signedp portdecl)
-                        (vl-regdecl->signedp item)))
+                        (vl-simplereg->signedp item)))
 
 ; It makes sense that a reg could be an output.  But I don't want to think
 ; about what it would mean for a reg to be an input or an inout wire.
@@ -393,14 +387,14 @@ item.</p>"
       (@wf-assert (equal (vl-portdecl->dir portdecl) :vl-output)
                   :vl-scary-reg
                   "~l0: port ~s1 has direction ~s2, but is also declared ~
-                        to be a register."
+                   to be a register."
                   (list (vl-portdecl->loc portdecl)
                         (vl-portdecl->name portdecl)
                         (vl-portdecl->dir portdecl)))
       ))
 
 ; It doesn't make sense to me that any of these would be a port.
-    ((:vl-vardecl :vl-eventdecl :vl-paramdecl :vl-fundecl :vl-taskdecl :vl-modinst :vl-gateinst)
+    ((:vl-paramdecl :vl-fundecl :vl-taskdecl :vl-modinst :vl-gateinst)
 
      (@wf-assert nil
                  :vl-weird-port
@@ -414,19 +408,29 @@ item.</p>"
       (er hard 'vl-portdecl-and-moduleitem-compatible-p "Impossible case")
       (@wf-assert nil)))))
 
-(defwellformed vl-overlap-compatible-p (names x)
+(defwellformed vl-overlap-compatible-p (names x palist ialist)
+  ;; For some very large modules (post synthesis), we found the overlap checking to be very
+  ;; expensive due to slow lookups.  So, we now optimize this to use fast-alist lookups.
   :parents (reasonable)
   :guard (and (string-listp names)
               (vl-module-p x)
+              (equal palist (vl-portdecl-alist (vl-module->portdecls x)))
+              (equal ialist (vl-moditem-alist x))
               (subsetp-equal names (vl-portdecllist->names (vl-module->portdecls x)))
               (subsetp-equal names (vl-module->modnamespace x)))
   :body (if (atom names)
-            (@wf-assert t)
+            (progn$
+             ;; BOZO I hate this style where the aux function frees the fast alists,
+             ;; but for now it's easier to do it this way.
+             (fast-alist-free ialist)
+             (fast-alist-free palist)
+             (@wf-assert t))
           (@wf-progn
            (@wf-call vl-portdecl-and-moduleitem-compatible-p
-                     (vl-find-portdecl (car names) (vl-module->portdecls x))
-                     (vl-find-moduleitem (car names) x))
-           (@wf-call vl-overlap-compatible-p (cdr names) x))))
+                     (vl-fast-find-portdecl (car names) (vl-module->portdecls x) palist)
+                     (vl-fast-find-moduleitem (car names) x ialist))
+           (@wf-call vl-overlap-compatible-p (cdr names) x palist ialist))))
+
 
 
 
@@ -655,39 +659,26 @@ item.</p>"
   :guard (vl-module-p x)
   :extra-decls ((xargs :guard-debug t))
   :body
-  (let* ((name          (vl-module->name x))
-         (ports         (vl-module->ports x))
-         (portdecls     (vl-module->portdecls x))
-         (regdecls      (vl-module->regdecls x))
-         (netdecls      (vl-module->netdecls x))
-         (eventdecls    (vl-module->eventdecls x))
-         (modinsts      (vl-module->modinsts x))
-         (gateinsts     (vl-module->gateinsts x))
-         (initials      (vl-module->initials x))
-         (alwayses      (vl-module->alwayses x))
-         (minloc        (vl-module->minloc x))
-         (pdnames       (vl-portdecllist->names portdecls))
-         (pdnames-s     (mergesort pdnames))
-         (namespace     (vl-module->modnamespace x))
-         (namespace-s   (mergesort namespace))
-         (overlap       (intersect pdnames-s namespace-s)))
-    (declare (ignorable name eventdecls minloc initials alwayses))
+  (b* (((vl-module x) x)
+       (pdnames       (vl-portdecllist->names x.portdecls))
+       (pdnames-s     (mergesort pdnames))
+       (namespace     (vl-module->modnamespace x))
+       (namespace-s   (mergesort namespace))
+       (overlap       (intersect pdnames-s namespace-s))
+       (palist        (vl-portdecl-alist x.portdecls))
+       (ialist        (vl-moditem-alist x)))
     (@wf-progn
-     (@wf-call vl-portlist-reasonable-p ports)
-     (@wf-call vl-portdecllist-reasonable-p portdecls)
+     (@wf-call vl-portlist-reasonable-p x.ports)
+     (@wf-call vl-portdecllist-reasonable-p x.portdecls)
      ;; (@wf-call vl-ports-and-portdecls-compatible-p ports portdecls)
-     (@wf-call vl-netdecllist-reasonable-p netdecls)
-     (@wf-call vl-regdecllist-reasonable-p regdecls)
-     (@wf-note (not eventdecls)
-               :vl-eventdecls
-               "~l0: module ~s1 contains event declarations."
-               (list minloc name))
-     (@wf-call vl-modinstlist-reasonable-p modinsts)
-     (@wf-call vl-gateinstlist-reasonable-p gateinsts)
-     (@wf-note (not initials)
+     (@wf-call vl-netdecllist-reasonable-p x.netdecls)
+     (@wf-call vl-vardecllist-reasonable-p x.vardecls)
+     (@wf-call vl-modinstlist-reasonable-p x.modinsts)
+     (@wf-call vl-gateinstlist-reasonable-p x.gateinsts)
+     (@wf-note (not x.initials)
                :vl-initial-stmts
                "~l0: module ~s1 contains initial statements."
-               (list minloc name))
+               (list x.minloc x.name))
 
 ; Not really a problem anymore
 ;     (@wf-note (not alwayses)
@@ -700,8 +691,8 @@ item.</p>"
                       :exec (same-lengthp namespace namespace-s))
                  :vl-namespace-error
                  "~l0: ~s1 illegally redefines ~&2."
-                 (list minloc name (duplicated-members namespace)))
-     (@wf-call vl-overlap-compatible-p overlap x))))
+                 (list x.minloc x.name (duplicated-members namespace)))
+     (@wf-call vl-overlap-compatible-p overlap x palist ialist))))
 
 (defwellformed-list vl-modulelist-reasonable-p (x)
   :parents (reasonable)
@@ -709,62 +700,34 @@ item.</p>"
   :element vl-module-reasonable-p)
 
 
-
-(defsection vl-module-check-reasonable
+(define vl-module-check-reasonable
   :parents (reasonable)
-  :short "@(call vl-module-check-reasonable) annotates @('x') with any warnings
-about whether it is @(see reasonable).  Furthermore, if @('x') is unreasonable,
-a fatal warning is added that mentions this."
-
-  (defund vl-module-check-reasonable (x)
-    (declare (xargs :guard (vl-module-p x)))
-    (b* (((when (vl-module->hands-offp x))
-          x)
-         (warnings
-          (vl-module->warnings x))
-         ((mv okp warnings)
-          (vl-module-reasonable-p-warn x warnings))
-         (warnings
-          (if okp
-              warnings
-            (cons (make-vl-warning
-                   :type :vl-mod-unreasonable
-                   :msg "Module ~m0 has been deemed unreasonable."
-                   :args (list (vl-module->name x))
-                   :fatalp t
-                   :fn 'vl-module-check-reasonable)
-                  warnings)))
-         (x-prime
-          (change-vl-module x :warnings warnings)))
-        x-prime))
-
-  (local (in-theory (enable vl-module-check-reasonable)))
-
-  (defthm vl-module-p-of-vl-module-check-reasonable
-    (implies (force (vl-module-p x))
-             (vl-module-p (vl-module-check-reasonable x))))
-
-  (defthm vl-module->name-of-vl-module-check-reasonable
-    (equal (vl-module->name (vl-module-check-reasonable x))
-           (vl-module->name x))))
-
+  :short "Annotate a module with any warnings concerning whether it is @(see
+reasonable).  Furthermore, if @('x') is unreasonable, a fatal warning to it."
+  ((x vl-module-p))
+  :returns (new-x vl-module-p :hyp :fguard)
+  (b* (((when (vl-module->hands-offp x))
+        x)
+       (warnings          (vl-module->warnings x))
+       ((mv okp warnings) (vl-module-reasonable-p-warn x warnings))
+       (warnings          (if okp
+                              (ok)
+                            (fatal :type :vl-mod-unreasonable
+                                   :msg "Module ~m0 is unreasonable."
+                                   :args (list (vl-module->name x)))))
+       (x-prime (change-vl-module x :warnings warnings)))
+    x-prime))
 
 (defprojection vl-modulelist-check-reasonable (x)
   (vl-module-check-reasonable x)
   :guard (vl-modulelist-p x)
   :result-type vl-modulelist-p
-  :parents (reasonable)
-  :short "@(call vl-modulelist-check-reasonable) annotates each module in
-@('x') with any warnings regarding whether it is @(see reasonable);
-furthermore, any unreasonable modules are annotated with a fatal warning."
+  :parents (reasonable))
 
-  :long "<p>This function may be used in conjunction with @(see
-vl-propagate-errors) to safely eliminate any unreasonable modules and their
-dependents.</p>"
-
-  :rest ((defthm vl-modulelist->names-of-vl-modulelist-check-reasonable
-           (equal (vl-modulelist->names (vl-modulelist-check-reasonable x))
-                  (vl-modulelist->names x))
-           :hints(("Goal" :induct (len x))))))
-
+(define vl-design-check-reasonable ((design vl-design-p))
+  :returns (new-design vl-design-p)
+  (b* ((design (vl-design-fix design))
+       ((vl-design design) design)
+       (new-mods (vl-modulelist-check-reasonable design.mods)))
+    (change-vl-design design :mods new-mods)))
 

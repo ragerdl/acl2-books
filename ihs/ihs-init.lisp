@@ -1,19 +1,6 @@
 ; ihs-init.lisp -- root of the IHS libraries
 ; Copyright (C) 1997  Computational Logic, Inc.
-
-; This book is free software; you can redistribute it and/or modify
-; it under the terms of the GNU General Public License as published by
-; the Free Software Foundation; either version 2 of the License, or
-; (at your option) any later version.
-
-; This book is distributed in the hope that it will be useful,
-; but WITHOUT ANY WARRANTY; without even the implied warranty of
-; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-; GNU General Public License for more details.
-
-; You should have received a copy of the GNU General Public License
-; along with this book; if not, write to the Free Software
-; Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+; License: A 3-clause BSD license.  See the LICENSE file distributed with ACL2.
 
 ;;;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;;
@@ -328,7 +315,29 @@
 
   ;;  The guard is provided only to admit the function.
   (declare (xargs :guard (true-listp theory)))
-  (set-difference-equal theory (rewrite-theory theory)))
+
+; Change by Matt K. mod, 6/9/2014: The use of set-difference-equal here and/or
+; in definition-free-theory caused a stack overflow in Allegro CL.  Even in
+; CCL, we found that it took over 10 seconds on a reasonably modern machine to
+; evaluate the form
+; (rewrite-free-theory (definition-free-theory (universal-theory 'ihs-theories)))
+; after
+; (include-book "centaur/vl/top" :dir :system)
+; and
+; (include-book "ihs/ihs-theories" :dir :system).
+; After the change to this function and definition-free-theory, the time was
+; reduced to 0.05 seconds (realtime and runtime) -- reduction by more than two
+; orders of magnitude!  The above evaluation produced the same result, up to
+; ordering, after the changes.
+
+; (set-difference-equal theory (rewrite-theory theory)
+
+  (cond ((endp theory) ())
+	((and (consp (car theory))
+	      (equal (caar theory) :rewrite))
+	 (rewrite-free-theory (cdr theory)))
+	(t (cons (car theory)
+                 (rewrite-free-theory (cdr theory))))))
 
 ;;;  DEFINITION-THEORY name
 ;;;  DEFINITION-FREE-THEORY name
@@ -352,7 +361,17 @@
   "
   ;;  The guard is provided only to admit the function.
   (declare (xargs :guard (true-listp theory)))
-  (set-difference-equal theory (definition-theory theory)))
+
+; Change by Matt K. mod, 6/9/2014: See rewrite-free-theory for details.
+
+; (set-difference-equal theory (definition-theory theory)
+
+  (cond ((endp theory) ())
+	((and (consp (car theory))
+	      (equal (caar theory) :definition))
+	 (definition-free-theory (cdr theory)))
+	(t (cons (car theory)
+                 (definition-free-theory (cdr theory))))))
 
 ;;;  DEFUN-THEORY
 

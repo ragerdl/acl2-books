@@ -1,26 +1,36 @@
 ; VL Verilog Toolkit
-; Copyright (C) 2008-2013 Centaur Technology
+; Copyright (C) 2008-2014 Centaur Technology
 ;
 ; Contact:
 ;   Centaur Technology Formal Verification Group
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
 (in-package "VL")
 (include-book "../mlib/ctxexprs")
-(include-book "../mlib/fix")
+(include-book "../mlib/strip")
 (local (include-book "../util/arithmetic"))
 
 (defxdoc condcheck
@@ -49,7 +59,7 @@ like the following, except that we target the @('?:') operator instead of
     else ...
 })
 
-<p>And for @('if(constant) {...}').</p>
+<p>And for @('if (constant) {...}').</p>
 
 <p>All of this could be adapted to @('if') statements too, but we target the
 @('?:') operator because we care a lot less about procedural code (like test
@@ -70,13 +80,13 @@ should probably be run before @(see oprewrite), which screws around with
 conditional expressions, and also before things like expression splitting which
 would get rid of the nested branches.</p>")
 
+(local (xdoc::set-default-parents condcheck))
 
 (define vl-condcheck-fix ((x vl-expr-p))
   :returns (new-x vl-expr-p :hyp :fguard)
-  :parents (condcheck)
   :short "Canonicalize an test expression for condcheck."
 
-  :long "<p>We fix X (in the normal sense of @(see vl-expr-fix), to throw away
+  :long "<p>We fix X (in the normal sense of @(see vl-expr-strip), to throw away
 widths, attributes, etc., to facilitate equality checking), and then do certain
 kinds of not-necessarily-sound rewriting to try to further canonicalize things.
 These rewrites might possibly help us recognize a broader class of errors, but
@@ -99,7 +109,7 @@ that we only apply these rewrites at the top-level and not in any deep way,
 which also sort of makes sense since we only want to assume that the top-level
 expression is one-bit wide.</p>"
 
-  (b* ((x (vl-expr-fix x))
+  (b* ((x (vl-expr-strip x))
 
        ((when (vl-fast-atom-p x))
         x)
@@ -166,10 +176,8 @@ expression is one-bit wide.</p>"
     x))
 
 
-
 (define vl-condcheck-negate ((x vl-expr-p))
   :returns (new-x vl-expr-p :hyp :fguard)
-  :parents (condcheck)
   :short "Smartly negate a canonicalized expression."
 
   :long "<p>We assume @('X') is already canonicalized in the sense of @(see
@@ -184,13 +192,10 @@ vl-condcheck-fix).  We \"smartly\" negate it so that, e.g., @('A') becomes
                        :args (list x))))
 
 
-(defsection vl-expr-condcheck
-  :parents (condcheck)
+(defines vl-expr-condcheck
   :short "Look for strange conditions throughout an expression."
 
-  :long "<p>@(call vl-expr-condcheck) returns a list of warnings.</p>
-
-<p>We recursively look throughout @('x') for problematic tests.</p>
+  :long "<p>We recursively look throughout @('x') for problematic tests.</p>
 
 <p>The @('tests-above') are all the tests we have seen as we have descended
 through expressions of the form</p>
@@ -218,108 +223,89 @@ assume must be true as we are seeing @('X').</p>
 <p>@('ctx') is a @(see vl-context-p) that should explain where this expression
 occurs, and is used in any warning messages we produce.</p>"
 
-  (mutual-recursion
+  (define vl-expr-condcheck
+    ((x           vl-expr-p)
+     (tests-above (and (vl-exprlist-p tests-above)
+                       (true-listp tests-above)))
+     (ctx         vl-context-p))
+    :returns (warnings vl-warninglist-p)
+    :verify-guards nil
+    :measure (vl-expr-count x)
+    (b* (((when (vl-fast-atom-p x))
+          nil)
+         (op   (vl-nonatom->op x))
+         (args (vl-nonatom->args x))
 
-   (defund vl-expr-condcheck (x tests-above ctx)
-     (declare (xargs :guard (and (vl-expr-p x)
-                                 (vl-exprlist-p tests-above)
-                                 (true-listp tests-above)
-                                 (vl-context-p ctx))
-                     :verify-guards nil
-                     :measure (two-nats-measure (acl2-count x) 1)
-                     :hints(("Goal" :in-theory (disable (force))))))
-     (b* (((when (vl-fast-atom-p x))
-           nil)
-          (op   (vl-nonatom->op x))
-          (args (vl-nonatom->args x))
+         ((unless (eq op :vl-qmark))
+          (vl-exprlist-condcheck args tests-above ctx))
 
-          ((unless (eq op :vl-qmark))
-           (vl-exprlist-condcheck args tests-above ctx))
+         (test      (first args))
+         (test-fix  (vl-condcheck-fix test))
+         (~test-fix (vl-condcheck-negate test-fix))
 
-          (test      (first args))
-          (test-fix  (vl-condcheck-fix test))
-          (~test-fix (vl-condcheck-negate test-fix))
-
-          (warnings
-           (cond ((and (vl-fast-atom-p test)
-                       (or (vl-fast-constint-p (vl-atom->guts test))
-                           (vl-fast-weirdint-p (vl-atom->guts test))))
-                  (list (make-vl-warning
-                         :type :vl-warn-qmark-const
-                         :msg "~a0: found a ?: operator with constant ~
+         (warnings
+          (cond ((and (vl-fast-atom-p test)
+                      (or (vl-fast-constint-p (vl-atom->guts test))
+                          (vl-fast-weirdint-p (vl-atom->guts test))))
+                 (list (make-vl-warning
+                        :type :vl-warn-qmark-const
+                        :msg "~a0: found a ?: operator with constant ~
                              expression ~a1 as its test: ~a2.~%"
-                         :args (list ctx test x)
-                         :fatalp nil
-                         :fn 'vl-expr-condcheck)))
+                        :args (list ctx test x)
+                        :fatalp nil
+                        :fn 'vl-expr-condcheck)))
 
-                 ((member-equal test-fix tests-above)
-                  (list (make-vl-warning
-                         :type :vl-warn-qmark-always-true
-                         :msg "~a0: found a ?: operator that is considering ~
+                ((member-equal test-fix tests-above)
+                 (list (make-vl-warning
+                        :type :vl-warn-qmark-always-true
+                        :msg "~a0: found a ?: operator that is considering ~
                              whether ~a1 holds, but an equivalent case was ~
                              considered above, so this will always be true. ~
                              The sub-expression is ~a2."
-                         :args (list ctx test x)
-                         :fatalp nil
-                         :fn 'vl-expr-condcheck)))
+                        :args (list ctx test x)
+                        :fatalp nil
+                        :fn 'vl-expr-condcheck)))
 
-                 ((member-equal ~test-fix tests-above)
-                  (list (make-vl-warning
-                         :type :vl-warn-qmark-always-false
-                         :msg "~a0: found a ?: operator that is considering ~
+                ((member-equal ~test-fix tests-above)
+                 (list (make-vl-warning
+                        :type :vl-warn-qmark-always-false
+                        :msg "~a0: found a ?: operator that is considering ~
                              whether ~a1 holds, but an equivalent case was ~
                              considered above, so this will always be false. ~
                              The sub-expression is ~a2."
-                         :args (list ctx test x)
-                         :fatalp nil
-                         :fn 'vl-expr-condcheck)))
+                        :args (list ctx test x)
+                        :fatalp nil
+                        :fn 'vl-expr-condcheck)))
 
-                 (t
-                  nil))))
+                (t
+                 nil))))
 
-       (append warnings
-               (vl-expr-condcheck (second args)
-                                  (cons test-fix tests-above)
-                                  ctx)
-               (vl-expr-condcheck (third args)
-                                  (cons ~test-fix tests-above)
-                                  ctx))))
+      (append warnings
+              (vl-expr-condcheck (second args)
+                                 (cons test-fix tests-above)
+                                 ctx)
+              (vl-expr-condcheck (third args)
+                                 (cons ~test-fix tests-above)
+                                 ctx))))
 
-   (defund vl-exprlist-condcheck (x tests-above ctx)
-     (declare (xargs :guard (and (vl-exprlist-p x)
-                                 (vl-exprlist-p tests-above)
-                                 (true-listp tests-above)
-                                 (vl-context-p ctx))
-                     :measure (two-nats-measure (acl2-count x) 0)))
-     (if (atom x)
-         nil
-       (append (vl-expr-condcheck (car x) tests-above ctx)
-               (vl-exprlist-condcheck (cdr x) tests-above ctx)))))
-
-
-  (flag::make-flag vl-flag-expr-condcheck
-                   vl-expr-condcheck
-                   :flag-mapping ((vl-expr-condcheck . expr)
-                                  (vl-exprlist-condcheck . list)))
-
-  (defthm-vl-flag-expr-condcheck
-    (defthm vl-warninglist-p-of-vl-expr-condcheck
-      (vl-warninglist-p (vl-expr-condcheck x tests-above ctx))
-      :flag expr)
-    (defthm vl-warninglist-p-of-vl-exprlist-condcheck
-      (vl-warninglist-p (vl-exprlist-condcheck x tests-above ctx))
-      :flag list)
-    :hints(("Goal" :expand ((vl-expr-condcheck x tests-above ctx)
-                            (vl-exprlist-condcheck x tests-above ctx)))))
-
+  (define vl-exprlist-condcheck
+    ((x vl-exprlist-p)
+     (tests-above (and (vl-exprlist-p tests-above)
+                       (true-listp tests-above)))
+     (ctx vl-context-p))
+    :returns (warnings vl-warninglist-p)
+    :measure (vl-exprlist-count x)
+    (if (atom x)
+        nil
+      (append (vl-expr-condcheck (car x) tests-above ctx)
+              (vl-exprlist-condcheck (cdr x) tests-above ctx))))
+  ///
   (verify-guards vl-expr-condcheck
-    :hints(("Goal" :in-theory (enable vl-expr-condcheck)))))
-
+    :guard-debug t))
 
 
 (define vl-exprctxalist-condcheck ((x vl-exprctxalist-p))
   :returns (warnings vl-warninglist-p)
-  :parents (condcheck)
   :short "@(call vl-exprctxalist-condcheck) extends @(see vl-expr-condcheck)
 across an @(see vl-exprctxalist-p)."
 
@@ -331,28 +317,25 @@ across an @(see vl-exprctxalist-p)."
 
 (define vl-module-condcheck ((x vl-module-p))
   :returns (new-x vl-module-p :hyp :fguard)
-  :parents (condcheck)
   :short "@(call vl-module-condcheck) carries our our @(see condcheck) on all
 the expressions in a module, and adds any resulting warnings to the module."
 
   (b* ((ctxexprs     (vl-module-ctxexprs x))
        (new-warnings (vl-exprctxalist-condcheck ctxexprs)))
     (change-vl-module x
-                      :warnings (append new-warnings (vl-module->warnings x))))
-  ///
-  (defthm vl-module->name-of-vl-module-condcheck
-    (equal (vl-module->name (vl-module-condcheck x))
-           (vl-module->name x))))
-
+                      :warnings (append new-warnings (vl-module->warnings x)))))
 
 (defprojection vl-modulelist-condcheck (x)
   (vl-module-condcheck x)
   :guard (vl-modulelist-p x)
-  :result-type vl-modulelist-p
-  :parents (condcheck)
-  :rest
-  ((defthm vl-modulelist->names-of-vl-modulelist-condcheck
-     (equal (vl-modulelist->names (vl-modulelist-condcheck x))
-            (vl-modulelist->names x)))))
+  :result-type vl-modulelist-p)
+
+(define vl-design-condcheck ((x vl-design-p))
+  :returns (new-x vl-design-p)
+  (b* ((x (vl-design-fix x))
+       ((vl-design x) x))
+    (change-vl-design x
+                      :mods (vl-modulelist-condcheck x.mods))))
+
 
 

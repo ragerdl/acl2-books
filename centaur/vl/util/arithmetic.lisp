@@ -6,15 +6,25 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
@@ -32,6 +42,9 @@
 (include-book "std/util/deflist" :dir :system)
 (include-book "std/util/defrule" :dir :system)
 
+;; assumes this book will only be locally included
+(in-theory (enable set::definitions
+                   set::expensive-rules))
 
 ;; BOZO how much of this is still needed, given the new Tau system?
 (defrule rationalp-when-integerp
@@ -84,7 +97,7 @@
 (include-book "std/lists/top" :dir :system)
 (include-book "std/alists/top" :dir :system)
 (include-book "std/typed-lists/top" :dir :system)
-
+(include-book "std/strings/decimal" :dir :system)
 (include-book "std/strings/explode-atom" :dir :system)
 
 
@@ -119,11 +132,10 @@
             intersection-equal
             no-duplicatesp-equal
             set-difference-equal
-
             assoc-equal
-
             hons-shrink-alist
-            make-fal))
+            make-fal
+            print-base-p))
 
 
 
@@ -569,3 +581,91 @@
 
 
 
+(defthm stringp-of-subseq
+  (equal (stringp (subseq x start end))
+         (stringp x))
+  :hints(("Goal" :in-theory (enable subseq))))
+
+(defthm true-listp-of-subseq
+  (equal (true-listp (subseq x start end))
+         (not (stringp x)))
+  :hints(("Goal" :in-theory (enable subseq))))
+
+
+(encapsulate
+  ()
+  (local (defthmd l0
+           (equal (< (+ a x) (+ a y))
+                  (< x y))))
+
+  (defthm |(< c2 (+ c1 a))|
+    (implies (and (syntaxp (quotep c2))
+                  (syntaxp (quotep c1)))
+             (equal (< c2 (+ c1 a))
+                    (< (- c2 c1) a)))
+    :hints(("Goal" :use ((:instance l0 (a (- c1)) (x c2) (y (+ c1 a))))))))
+
+
+(defsection characterp-of-nth-of-explode
+
+  (local (defthm l0
+           (implies (and (character-listp x)
+                         (< (nfix n) (len x)))
+                    (characterp (nth n x)))
+           :hints(("Goal" :in-theory (enable nth)))))
+
+  (local (defthm l1
+           (implies (and (character-listp x)
+                         (not (< (nfix n) (len x))))
+                    (equal (nth n x)
+                           nil))
+           :hints(("Goal" :in-theory (enable nth)))))
+
+  (local (defthm l2
+           (implies (character-listp x)
+                    (equal (characterp (nth n x))
+                           (< (nfix n) (len x))))
+           :hints(("Goal" :use ((:instance l0)
+                                (:instance l1))))))
+
+  (defthm characterp-of-nth-of-explode
+    (equal (characterp (nth n (explode x)))
+           (< (nfix n) (len (explode x))))))
+
+(defthm nth-of-explode-when-char-fix-known
+  (implies (equal (char-fix (nth n (explode x))) c)
+           (equal (nth n (explode x))
+                  (and (< (nfix n) (len (explode x)))
+                       c)))
+  :hints(("Goal"
+          :in-theory (disable nth characterp-of-nth-of-explode)
+          :use ((:instance characterp-of-nth-of-explode)))))
+
+
+(encapsulate ()
+  (local (defthm l0
+           (iff (member a (alist-keys (hons-shrink-alist x y)))
+                (or (member a (alist-keys x))
+                    (member a (alist-keys y))))
+           :hints(("Goal" :in-theory (enable hons-shrink-alist)))))
+
+  (defthm alist-keys-of-hons-shrink-alist
+    (set-equiv (alist-keys (hons-shrink-alist x y))
+               (append (alist-keys x)
+                       (alist-keys y)))
+    :hints((set-reasoning))))
+
+(defcong acl2::nat-equiv equal (str::natchars n) 1
+  :hints(("Goal" :in-theory (enable str::natchars))))
+
+(defcong acl2::nat-equiv equal (natstr n) 1)
+
+(defthm natstr-when-zp
+  (implies (zp n)
+           (equal (natstr n) "0"))
+  :hints(("Goal"
+          ;; This is fucking terrible.
+          :in-theory (disable acl2::NAT-EQUIV-IMPLIES-EQUAL-NATSTR-1)
+          :use ((:instance acl2::NAT-EQUIV-IMPLIES-EQUAL-NATSTR-1
+                 (n 0)
+                 (acl2::n-equiv n))))))

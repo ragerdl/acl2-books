@@ -6,30 +6,30 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
 (in-package "ACL2")
 (include-book "xdoc/top" :dir :system)
-
-(defxdoc std/basic
-  :parents (std)
-  :short "A collection of very basic functions that are occasionally
-convenient."
-
-  :long "<p>The @('std/basic') library adds a number of very basic definitions
-that are not built into ACL2.  There's very little to this, it's generally just
-a meant to be a home for simple definitions that don't fit into bigger
-libraries.</p>")
 
 (local (xdoc::set-default-parents std/basic))
 
@@ -39,7 +39,7 @@ libraries.</p>")
 requires that @('x') is a natural number and, in the execution, it is just a
 no-op that returns @('x')."
 
-  :long "<p>@(call lnfix) is a macro that just expands into</p>
+  :long "<p>@(call lnfix) is an inlined, enabled function that just expands into</p>
 
 @({
      (mbe :logic (nfix x) :exec x)
@@ -70,9 +70,9 @@ has some performance cost.</p>
 <p>By using @(see lnfix) in place of @('nfix') here, you can get the same
 logical definition without this overhead.</p>"
 
-  (defmacro lnfix (x)
-    `(mbe :logic (nfix ,x)
-          :exec ,x)))
+  (defun-inline lnfix (x)
+    (declare (xargs :guard (natp x)))
+    (mbe :logic (nfix x) :exec x)))
 
 
 (defsection lifix
@@ -80,7 +80,7 @@ logical definition without this overhead.</p>"
 requires that @('x') is an integer and, in the execution, it is just a no-op
 that returns @('x')."
 
-  :long "<p>@(call lifix) is a macro that just expands into</p>
+  :long "<p>@(call lifix) is an inlined, enabled function that just expands into</p>
 
 @({
      (mbe :logic (ifix x) :exec x)
@@ -89,9 +89,9 @@ that returns @('x')."
 <p>To understand why you might want this, see the analogous discussion about
 @(see lnfix).</p>"
 
-  (defmacro lifix (x)
-    `(mbe :logic (ifix ,x)
-          :exec ,x)))
+  (defun-inline lifix (x)
+    (declare (xargs :guard (integerp x)))
+    (mbe :logic (ifix x) :exec x)))
 
 
 (defsection true
@@ -194,3 +194,124 @@ satisfies @('maybe-stringp'), then either it is a string or nothing.</p>"
                (stringp x)))
     :rule-classes :compound-recognizer))
 
+
+(defsection char-fix
+  :parents (std/basic str::equivalences)
+  :short "Coerce to a character."
+
+  :long "<p>@(call char-fix) is the identity on @(see acl2::characters), and
+returns the NUL character (i.e., the character whose code is 0) for any
+non-character.</p>
+
+<p>This is similar to other fixing functions like @(see fix) and @(see nfix).
+See also @(see chareqv).</p>"
+
+  (defund-inline char-fix (x)
+    (declare (xargs :guard t))
+    (if (characterp x)
+        x
+      (code-char 0)))
+
+  (local (in-theory (enable char-fix)))
+
+  (defthm characterp-of-char-fix
+    (characterp (char-fix x))
+    :rule-classes :type-prescription)
+
+  (defthm char-fix-default
+    (implies (not (characterp x))
+             (equal (char-fix x)
+                    (code-char 0))))
+
+  (defthm char-fix-when-characterp
+    (implies (characterp x)
+             (equal (char-fix x)
+                    x))))
+
+
+(defsection chareqv
+  :parents (std/basic str::equivalences)
+  :short "Case-sensitive character equivalence test."
+
+  :long "<p>@(call chareqv) determines if @('x') and @('y') are equivalent when
+interpreted as characters.  That is, non-characters are first coerced to be the
+NUL character (via @(see char-fix)), then we see if these coerced arguments are
+equal.</p>
+
+<p>See also @(see str::ichareqv) for a case-insensitive alternative.</p>"
+
+  (defund-inline chareqv (x y)
+    (declare (xargs :guard t))
+    (eql (char-fix x) (char-fix y)))
+
+  (local (in-theory (enable char-fix char< chareqv)))
+
+  (defequiv chareqv)
+
+  (defthm chareqv-of-char-fix
+    (chareqv (char-fix x) x))
+
+  (defcong chareqv equal (char-fix x) 1)
+  (defcong chareqv equal (char-code x) 1)
+  (defcong chareqv equal (char< x y) 1)
+  (defcong chareqv equal (char< x y) 2))
+
+
+(defsection str-fix
+  :parents (std/basic str::equivalences)
+  :short "Coerce to a string."
+  :long "<p>@(call str-fix) is the identity on @(see acl2::stringp)s, or
+returns the empty string, @('\"\"'), for any non-string.</p>
+
+<p>This is similar to other fixing functions like @(see fix) and @(see nfix).
+See also @(see streqv).</p>"
+
+  (defund-inline str-fix (x)
+    (declare (xargs :guard t))
+    (if (stringp x)
+        x
+      ""))
+
+  (local (in-theory (enable str-fix)))
+
+  (defthm stringp-of-str-fix
+    (stringp (str-fix x))
+    :rule-classes :type-prescription)
+
+  (defthm str-fix-default
+    (implies (not (stringp x))
+             (equal (str-fix x)
+                    "")))
+
+  (defthm str-fix-when-stringp
+    (implies (stringp x)
+             (equal (str-fix x)
+                    x))))
+
+
+(defsection streqv
+  :parents (std/basic str::equivalences)
+  :short "Case-sensitive string equivalence test."
+
+  :long "<p>@(call streqv) determines if @('x') and @('y') are equivalent when
+interpreted as strings.  That is, non-strings are first coerced to be the empty
+string (via @(see str-fix)), then we see if these coerced arguments are
+equal.</p>
+
+<p>See also @(see str::istreqv) for a case-insensitive alternative.</p>"
+
+  (defund-inline streqv (x y)
+    (declare (xargs :guard t))
+    (equal (str-fix x) (str-fix y)))
+
+  (local (in-theory (enable str-fix streqv)))
+
+  (defequiv streqv)
+
+  (defthm streqv-of-str-fix
+    (streqv (str-fix x) x))
+
+  (defcong streqv equal (str-fix x) 1)
+  (defcong streqv equal (char x n) 1)
+  (defcong streqv equal (string-append x y) 1)
+  (defcong streqv equal (string-append x y) 2))

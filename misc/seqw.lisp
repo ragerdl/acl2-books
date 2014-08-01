@@ -1,55 +1,69 @@
 ; The SEQW Macro Language
-; Copyright (C) 2008-2010 Centaur Technology
+; Copyright (C) 2008-2014 Centaur Technology
 ;
 ; Contact:
 ;   Centaur Technology Formal Verification Group
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
 (in-package "ACL2")
 (include-book "seq")
 
+(defsection seqw
+  :parents (seq)
+  :short "An alternative implementation of the Seq language which allows for
+warnings to be implicitly collected and stored in a list as your program
+executes."
 
-; THE SEQW MACRO
-;
-; SEQW is an alternative implementation of the SEQ language which allows for
-; warnings to be implicitly collected and stored in a list as your program
-; executes.  This comment only describes the differences between SEQW and SEQ,
-; so if you have not yet examined seq.lisp and seq-examples.lsp, you will
-; want to look at them first.
-;
-; The difference is quite straightforward:
-;
-;   - Whereas a SEQ program has the form (seq <stream> ...), a SEQW program
-;     instead has one additional argument, (seqw <stream> <warnings> ...),
-;     where <warnings> is the name of a warnings structure.
-;
-;   - Whereas every SEQ action returns (MV ERROR VAL STREAM), each SEQW action
-;     instead returns (MV ERROR VAL STREAM WARNINGS), where WARNINGS is the
-;     updated warnings structure.
-;
-; Similarly, every SEQW program returns (MV ERROR VAL STREAM WARNINGS) instead
-; of (MV ERROR VAL STREAM).
-;
-; What is a warnings structure?  When we use SEQW, we generally accumulate
-; warnings into a list, so our actions just cons new warnings into this list
-; when desired.  But SEQW itself imposes no particular constraints on what
-; a warnings structure is, and generally the way in which a warning is updated
-; is determined by the actions of the program rather than by SEQW itself.
-;
-; For examples of using SEQW, see the file seqw-examples.lsp.
+  :long "<p>As background see @(see seq); here we only describe the differences
+between Seqw and Seq.</p>
+
+<p>The difference is quite straightforward:</p>
+
+<ul>
+
+<li>Whereas a Seq program has the form @('(seq <stream> ...)'), a Seqw program
+instead has one additional argument, @('(seqw <stream> <warnings> ...)'), where
+@('<warnings>') is the name of a <i>warnings structure</i> (see below).</li>
+
+<li>Whereas every Seq action returns @('(mv error val stream)'), each Seqw action
+instead returns @('(mv error val stream warnings)'), where warnings is the
+updated warnings structure.</li>
+
+<li>Similarly, every Seqw program returns @('(mv error val stream warnings)')
+instead of @('(mv error val stream)').</li>
+
+</ul>
+
+<p>What is a warnings structure?  When we use Seqw, we generally accumulate
+warnings into a list, so our actions just cons new warnings into this list
+when desired.  But Seqw itself imposes no particular constraints on what
+a warnings structure is, and generally the way in which a warning is updated
+is determined by the actions of the program rather than by Seqw itself.</p>
+
+<p>For examples of using SEQW, see the file @('misc/seqw-examples.lsp').</p>")
 
 (program)
 

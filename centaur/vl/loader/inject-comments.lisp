@@ -6,161 +6,111 @@
 ;   7600-C N. Capital of Texas Highway, Suite 300, Austin, TX 78731, USA.
 ;   http://www.centtech.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
+;
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
 ;
 ; Original author: Jared Davis <jared@centtech.com>
 
 (in-package "VL")
-(include-book "../parsetree")
+(include-book "descriptions")
 (local (include-book "../util/arithmetic"))
+(local (xdoc::set-default-parents vl-commentmap-p))
 
+(define vl-gather-comments-nrev ((min vl-location-p)
+                                 (max vl-location-p)
+                                 (cmap vl-commentmap-p)
+                                 nrev)
+  :parents (vl-gather-comments)
+  (b* (((when (atom cmap))
+        (nrev-fix nrev))
+       (nrev (if (vl-location-between-p (caar cmap) min max)
+                 (nrev-push (car cmap) nrev)
+               nrev)))
+    (vl-gather-comments-nrev min max (cdr cmap) nrev)))
 
-(defsection vl-commentmap-entry-sort
-  :parents (vl-commentmap-p)
-  :short "A basic sort for comment maps."
-
-  :long "<p>Our pretty-printer uses the following routine in a funny way to get
-the comments put inline with the module elements.</p>
-
-<p>The sort is introduced with defsort, so it is a stable mergesort.  Note that
-we ignore file names.</p>"
-
-  (defund vl-commentmap-entry-p (x)
-    (declare (xargs :guard t))
-    (and (consp x)
-         (vl-location-p (car x))
-         (stringp (cdr x))))
-
-  (defund vl-commentmap-entry-< (x y)
-    (declare (xargs :guard (and (vl-commentmap-entry-p x)
-                                (vl-commentmap-entry-p y))
-                    :guard-hints (("Goal" :in-theory (enable vl-commentmap-entry-p)))))
-    (let ((line-x (vl-location->line (car x)))
-          (line-y (vl-location->line (car y))))
-      (or (< line-x line-y)
-          (and (= line-x line-y)
-               (< (vl-location->col (car x))
-                  (vl-location->col (car y)))))))
-
-  (defthm transitivity-of-vl-commentmap-entry-<
-    (implies (and (vl-commentmap-entry-< x y)
-                  (vl-commentmap-entry-< y z))
-             (vl-commentmap-entry-< x z))
-    :hints(("Goal" :in-theory (enable vl-commentmap-entry-<))))
-
-  (ACL2::defsort :comparablep vl-commentmap-entry-p
-                 :compare< vl-commentmap-entry-<
-                 :prefix vl-commentmap-entry)
-
-  (defthm vl-commentmap-entry-list-p-elim
-    (equal (vl-commentmap-entry-list-p x)
-           (vl-commentmap-p (list-fix x)))
-    :hints(("Goal"
-            :in-theory (enable vl-commentmap-entry-p
-                               vl-commentmap-entry-list-p))))
-
-  (defthm true-listp-when-vl-commentmap-p
-    (implies (vl-commentmap-p x)
-             (true-listp x))
-    :rule-classes ((:compound-recognizer)
-                   (:rewrite :backchain-limit-lst 1))
-    :hints(("Goal" :induct (len x))))
-
-  (defthm vl-commentmap-p-of-vl-commentmap-entry-sort
-    (implies (vl-commentmap-p x)
-             (vl-commentmap-p (vl-commentmap-entry-sort x)))
-    :hints(("goal" :use ((:instance vl-commentmap-entry-sort-creates-comparable-listp
-                                    (acl2::x x)))))))
-
-
-
-
-
-(defsection vl-gather-comments
-  :parents (vl-commentmap-p)
+(define vl-gather-comments
   :short "Slow, but straightforward routine for gathering all comments between
 two locations."
-
+  ((min vl-location-p)
+   (max vl-location-p)
+   (cmap vl-commentmap-p))
   :long "<p>See also @(see vl-gather-comments-fal), which implements a much faster
 routine for gathering comments.</p>"
+  :verify-guards nil
+  (mbe :logic
+       (cond ((atom cmap)
+              nil)
+             ((vl-location-between-p (caar cmap) min max)
+              (cons (car cmap)
+                    (vl-gather-comments min max (cdr cmap))))
+             (t
+              (vl-gather-comments min max (cdr cmap))))
+       :exec
+       (prog2$
+        ;; Extralogical warning because it's weird to think about trying to
+        ;; gather from a min and max in different files, and because of the
+        ;; notion of vl-location-between-p, this will always result in no
+        ;; comments.
+        (let ((min-filename (vl-location->filename min))
+              (max-filename (vl-location->filename max)))
+          (or (equal min-filename max-filename)
+              (cw "; vl-gather-comments: min/max have different filenames.~%")))
 
-  (defund vl-gather-comments-aux (min max cmap acc)
-    (declare (xargs :guard (and (vl-location-p min)
-                                (vl-location-p max)
-                                (vl-commentmap-p cmap)
-                                (vl-commentmap-p acc))))
-    (if (consp cmap)
-        (vl-gather-comments-aux min max (cdr cmap)
-                                (if (vl-location-between-p (caar cmap) min max)
-                                    (cons (car cmap) acc)
-                                  acc))
-      acc))
+        ;; Actual implementation:
+        (with-local-nrev
+          (vl-gather-comments-nrev min max cmap nrev))))
+  ///
+  (defthm vl-gather-comments-nrev-removal
+    (equal (vl-gather-comments-nrev min max cmap nrev)
+           (append nrev (vl-gather-comments min max cmap)))
+    :hints(("Goal" :in-theory (enable vl-gather-comments-nrev))))
 
-  (defthm true-listp-of-vl-gather-comments-aux
-    (implies (true-listp acc)
-             (true-listp (vl-gather-comments-aux min max cmap acc)))
-    :hints(("Goal" :in-theory (enable vl-gather-comments-aux))))
-
-  (defthm vl-commentmap-p-of-vl-gather-comments-aux
-    (implies (and (force (vl-commentmap-p acc))
-                  (force (vl-commentmap-p cmap)))
-             (vl-commentmap-p (vl-gather-comments-aux min max cmap acc)))
-    :hints(("Goal" :in-theory (enable vl-gather-comments-aux))))
-
-  (defund vl-gather-comments (min max cmap)
-    (declare (xargs :guard (and (vl-location-p min)
-                                (vl-location-p max)
-                                (vl-commentmap-p cmap))
-                    :verify-guards nil))
-    (mbe :logic
-         (cond ((atom cmap)
-                nil)
-               ((vl-location-between-p (caar cmap) min max)
-                (cons (car cmap)
-                      (vl-gather-comments min max (cdr cmap))))
-               (t
-                (vl-gather-comments min max (cdr cmap))))
-         :exec
-         (prog2$
-          ;; Extralogical warning because it's weird to think about trying to
-          ;; gather from a min and max in different files, and because of the
-          ;; notion of vl-location-between-p, this will always result in no
-          ;; comments.
-          (let ((min-filename (vl-location->filename min))
-                (max-filename (vl-location->filename max)))
-            (or (equal min-filename max-filename)
-                (cw "; vl-gather-comments: min/max have different filenames.~%")))
-
-          ;; Actual implementation:
-          (reverse (vl-gather-comments-aux min max cmap nil)))))
-
-  (defthm vl-gather-comments-aux-removal
-    (implies (true-listp acc)
-             (equal (vl-gather-comments-aux min max cmap acc)
-                    (revappend (vl-gather-comments min max cmap) acc)))
-    :hints(("Goal" :in-theory (enable vl-gather-comments-aux
-                                      vl-gather-comments))))
-
-  (verify-guards vl-gather-comments
-                 :hints(("Goal" :in-theory (enable vl-gather-comments))))
+  (verify-guards vl-gather-comments)
 
   (defthm vl-commentmap-p-of-vl-gather-comments
     (implies (force (vl-commentmap-p cmap))
-             (vl-commentmap-p (vl-gather-comments min max cmap)))
-    :hints(("Goal" :in-theory (enable vl-gather-comments)))))
+             (vl-commentmap-p (vl-gather-comments min max cmap)))))
+
+
+(define vl-commentmap-lines-agreep
+  :parents (vl-commentmap-falp)
+  ((line posp)
+   (x    vl-commentmap-p))
+  (if (atom x)
+      t
+    (and (equal (vl-location->line (caar x)) line)
+         (vl-commentmap-lines-agreep line (cdr x))))
+  ///
+  (defthm vl-commentmap-lines-agreep-when-not-consp
+    (implies (not (consp x))
+             (equal (vl-commentmap-lines-agreep line x)
+                    t)))
+
+  (defthm vl-commentmap-lines-agreep-of-cons
+    (equal (vl-commentmap-lines-agreep line (cons a x))
+           (and (equal (vl-location->line (car a)) line)
+                (vl-commentmap-lines-agreep line x)))))
 
 
 
-(defsection vl-commentmap-falp
-  :parents (vl-commentmap-p)
+(define vl-commentmap-falp (x)
   :short "Data structure that supports efficient comment gathering."
 
   :long "<p>Our initial approach to pretty-printing with comments was to store
@@ -199,77 +149,56 @@ practice, is typically a singleton.</p>
 <p>To extract all of the comments, we simply walk over the lines between min
 and max, gathering their comments.</p>"
 
-  (defund vl-commentmap-lines-agreep (line x)
-    (declare (xargs :guard (vl-commentmap-p x)))
-    (if (atom x)
-        t
-      (and (equal (vl-location->line (caar x)) line)
-           (vl-commentmap-lines-agreep line (cdr x)))))
-
-  (defthm vl-commentmap-lines-agreep-when-not-consp
-    (implies (not (consp x))
-             (equal (vl-commentmap-lines-agreep line x)
-                    t))
-    :hints(("Goal" :in-theory (enable vl-commentmap-lines-agreep))))
-
-  (defthm vl-commentmap-lines-agreep-of-cons
-    (equal (vl-commentmap-lines-agreep line (cons a x))
-           (and (equal (vl-location->line (car a)) line)
-                (vl-commentmap-lines-agreep line x)))
-    :hints(("Goal" :in-theory (enable vl-commentmap-lines-agreep))))
-
-  (defund vl-commentmap-falp (x)
-    (declare (xargs :guard t))
-    (if (atom x)
-        (not x)
-      (and (consp (car x))
-           (posp (caar x))
-           (vl-commentmap-p (cdar x))
-           (vl-commentmap-lines-agreep (caar x) (cdar x))
-           (vl-commentmap-falp (cdr x)))))
-
+  (if (atom x)
+      (not x)
+    (and (consp (car x))
+         (posp (caar x))
+         (vl-commentmap-p (cdar x))
+         (vl-commentmap-lines-agreep (caar x) (cdar x))
+         (vl-commentmap-falp (cdr x))))
+  ///
   (defthm vl-commentmap-falp-of-extension
     (implies (and (force (posp line))
                   (force (vl-commentmap-p map))
                   (force (vl-commentmap-lines-agreep line map))
                   (force (vl-commentmap-falp alist)))
-             (vl-commentmap-falp (cons (cons line map) alist)))
-    :hints(("Goal" :in-theory (enable vl-commentmap-falp))))
+             (vl-commentmap-falp (cons (cons line map) alist))))
 
   (defthm vl-commentmap-falp-of-hons-shrink-alist
     (implies (and (force (vl-commentmap-falp x))
                   (force (vl-commentmap-falp y)))
              (vl-commentmap-falp (hons-shrink-alist x y)))
-    :hints(("Goal" :in-theory (enable vl-commentmap-falp hons-shrink-alist))))
+    :hints(("Goal" :in-theory (enable hons-shrink-alist))))
+
+  (defthm vl-commentmap-falp-of-append
+    (implies (and (force (vl-commentmap-falp x))
+                  (force (vl-commentmap-falp y)))
+             (vl-commentmap-falp (append x y))))
 
   (defthm vl-commentmap-p-of-hons-assoc-equal
     (implies (vl-commentmap-falp x)
              (equal (vl-commentmap-p (cdr (hons-assoc-equal line x)))
-                    t))
-    :hints(("Goal" :in-theory (enable vl-commentmap-falp))))
+                    t)))
 
   (defthm vl-commentmap-lines-agreep-of-hons-assoc-equal
     (implies (force (vl-commentmap-falp x))
              (equal (vl-commentmap-lines-agreep line (cdr (hons-assoc-equal line x)))
-                    t))
-    :hints(("Goal" :in-theory (enable vl-commentmap-falp)))))
+                    t))))
 
 
 
-(defsection vl-commentmap-fal
-  :parents (vl-commentmap-p)
+(define vl-commentmap-fal-aux
+  :parents (vl-commentmap-fal)
   :short "Construct the @(see vl-commentmap-falp) for a @(see vl-commentmap-p)."
-  :long "<p>Note: returns a fast alist.</p>"
-
-  (defund vl-commentmap-fal-aux (x alist)
-    (declare (xargs :guard (vl-commentmap-p x)))
-    (if (atom x)
-        alist
-      (let* ((line  (vl-location->line (caar x)))
-             (curr  (cdr (hons-get line alist)))
-             (alist (hons-acons line (cons (car x) curr) alist)))
-        (vl-commentmap-fal-aux (cdr x) alist))))
-
+  ((x     vl-commentmap-p "Commentmap we're processing.")
+   (alist "The fast alist we're extending."))
+  (b* (((when (atom x))
+        alist)
+       (line  (vl-location->line (caar x)))
+       (curr  (cdr (hons-get line alist)))
+       (alist (hons-acons line (cons (car x) curr) alist)))
+    (vl-commentmap-fal-aux (cdr x) alist))
+  ///
   (defthm consp-of-vl-commentmap-fal-aux
     (equal (consp (vl-commentmap-fal-aux x alist))
            (or (consp alist)
@@ -283,420 +212,350 @@ and max, gathering their comments.</p>"
              (vl-commentmap-falp (vl-commentmap-fal-aux x alist)))
     :hints(("Goal"
             :induct (vl-commentmap-fal-aux x alist)
-            :in-theory (enable vl-commentmap-fal-aux))))
+            :in-theory (enable vl-commentmap-fal-aux)))))
 
-  (defund vl-commentmap-fal (x)
-    (declare (xargs :guard (vl-commentmap-p x)))
-    (b* ((alist1 (vl-commentmap-fal-aux x nil))
-         (alist2 (hons-shrink-alist alist1 nil))
-         (- (flush-hons-get-hash-table-link alist1)))
-        alist2))
-
-  (defthm vl-commentmap-falp-of-vl-commentmap-fal
-    (implies (vl-commentmap-p x)
-             (vl-commentmap-falp (vl-commentmap-fal x)))
-    :hints(("Goal" :in-theory (enable vl-commentmap-fal)))))
+(define vl-commentmap-fal ((x vl-commentmap-p))
+  :returns (commentmap-fal vl-commentmap-falp)
+  :hooks (:fix)
+  (b* ((x      (vl-commentmap-fix x))
+       (alist1 (vl-commentmap-fal-aux x nil))
+       (alist2 (hons-shrink-alist alist1 nil)))
+    (fast-alist-free alist1)
+    alist2))
 
 
-
-(defsection vl-gather-comments-fal
-  :parents (vl-commentmap-p)
-  :short "Efficient routine for gathering comments using an @(see vl-commentmap-falp)."
-
-  (defund vl-gather-comments-fal-aux (minl maxl n min max fal acc)
-    (declare (xargs :guard (and (natp n)
-                                (natp minl)
-                                (natp maxl)
-                                (vl-location-p min)
-                                (vl-location-p max)
-                                (= (vl-location->line min) minl)
-                                (= (vl-location->line max) maxl)
-                                (<= minl n)
-                                (<= n maxl)
-                                (vl-commentmap-falp fal)
-                                (vl-commentmap-p acc))
-                    :verify-guards nil
-                    :measure (nfix (- (nfix n) (nfix minl)))))
-    (let* ((entry (hons-get n fal))
-           (acc   (if entry
-                      (vl-gather-comments-aux min max (cdr entry) acc)
-                    acc)))
-      (if (mbe :logic (zp (- (nfix n) (nfix minl)))
-               :exec (= n minl))
-          acc
-        (vl-gather-comments-fal-aux minl maxl (- n 1) min max fal acc))))
-
-  (verify-guards vl-gather-comments-fal-aux
-                 :hints(("goal" :use ((:instance return-type-of-vl-location->line
-                                                 (x min))))))
-
-  (defthm vl-commentmap-p-of-vl-gather-comments-fal-aux
-    (implies (and (vl-commentmap-p acc)
+(define vl-gather-comments-fal-nrev
+  :parents (vl-gather-comments-fal)
+  ((minl natp)
+   (maxl natp)
+   (n natp)
+   (min vl-location-p)
+   (max vl-location-p)
+   (fal vl-commentmap-falp)
+   (nrev))
+  :guard (and (eql (vl-location->line min) minl)
+              (eql (vl-location->line max) maxl)
+              (<= minl n)
+              (<= n maxl))
+  :measure (nfix (- (nfix n) (nfix minl)))
+  (b* ((entry (hons-get n fal))
+       (nrev  (if entry
+                  (vl-gather-comments-nrev min max (cdr entry) nrev)
+                nrev))
+       ((when (mbe :logic (zp (- (nfix n) (nfix minl)))
+                   :exec (eql n minl)))
+        (nrev-fix nrev)))
+    (vl-gather-comments-fal-nrev minl maxl (- n 1) min max fal nrev))
+  ///
+  (defthm vl-commentmap-p-of-vl-gather-comments-fal-nrev
+    (implies (and (vl-commentmap-p nrev)
                   (vl-commentmap-falp fal))
-             (vl-commentmap-p (vl-gather-comments-fal-aux minl maxl n min max fal acc)))
-    :hints(("Goal" :in-theory (enable vl-gather-comments-fal-aux))))
+             (vl-commentmap-p (vl-gather-comments-fal-nrev minl maxl n min max fal nrev)))))
 
-  (defun vl-gather-comments-fal (min max fal)
-    (declare (xargs :guard (and (vl-location-p min)
-                                (vl-location-p max)
-                                (<= (vl-location->line min)
-                                    (vl-location->line max))
-                                (vl-commentmap-falp fal))))
-    (let ((minl (vl-location->line min))
-          (maxl (vl-location->line max)))
-      (vl-gather-comments-fal-aux minl maxl maxl min max fal nil))))
+(define vl-gather-comments-fal
+  :short "Efficient routine for gathering comments using an @(see vl-commentmap-falp)."
+  ((min vl-location-p)
+   (max vl-location-p)
+   (fal vl-commentmap-falp))
+  :guard (<= (vl-location->line min)
+             (vl-location->line max))
+  (b* ((minl (vl-location->line min))
+       (maxl (vl-location->line max)))
+    (with-local-nrev
+      (vl-gather-comments-fal-nrev minl maxl maxl min max fal nrev)))
+  ///
+  (defthm vl-commentmap-p-of-vl-gather-comments-fal
+    (implies (force (vl-commentmap-falp fal))
+             (vl-commentmap-p (vl-gather-comments-fal min max fal)))))
 
 
 
-(define vl-inject-comments-module
+; Actually injecting the comments is gross.  When we only had modules this was
+; pretty straightforward.  But now there are other kinds of top-level
+; descriptions, and some of them don't have any comments of their own.
+
+(define vl-description-has-comments-p ((x vl-description-p))
+  (b* ((x (vl-description-fix x)))
+    (case (tag x)
+      ((:vl-module :vl-udp :vl-interface :vl-package :vl-program :vl-config :vl-typedef)
+       t)
+      (otherwise
+       nil))))
+
+(local (in-theory (enable vl-description-has-comments-p)))
+
+(define vl-description->minloc ((x vl-description-p))
+  :returns (minloc vl-location-p)
+  (b* ((x (vl-description-fix x)))
+    (case (tag x)
+      (:vl-module    (vl-module->minloc x))
+      (:vl-udp       (vl-udp->minloc x))
+      (:vl-interface (vl-interface->minloc x))
+      (:vl-package   (vl-package->minloc x))
+      (:vl-program   (vl-program->minloc x))
+      (:vl-config    (vl-config->minloc x))
+      (:vl-typedef   (vl-typedef->minloc x))
+      ;; Other things don't necessarily have minlocs, but we'll just use their
+      ;; ordinary locations.
+      (:vl-netdecl    (vl-netdecl->loc x))
+      (:vl-taskdecl   (vl-taskdecl->loc x))
+      (:vl-fundecl    (vl-fundecl->loc x))
+      (:vl-paramdecl  (vl-paramdecl->loc x))
+      (:vl-import     (vl-import->loc x))
+      (:vl-fwdtypedef (vl-fwdtypedef->loc x))
+      (otherwise      (progn$ (impossible) *vl-fakeloc*)))))
+
+(define vl-description->maxloc ((x vl-description-p))
+  :returns (maxloc vl-location-p)
+  (b* ((x (vl-description-fix x)))
+    (case (tag x)
+      (:vl-module    (vl-module->maxloc x))
+      (:vl-udp       (vl-udp->maxloc x))
+      (:vl-interface (vl-interface->maxloc x))
+      (:vl-package   (vl-package->maxloc x))
+      (:vl-program   (vl-program->maxloc x))
+      (:vl-config    (vl-config->maxloc x))
+      (:vl-typedef   (vl-typedef->maxloc x))
+      ;; Other things don't have separate min/max locs, but we'll just use
+      ;; their ordinary locations.
+      (:vl-netdecl    (vl-netdecl->loc x))
+      (:vl-taskdecl   (vl-taskdecl->loc x))
+      (:vl-fundecl    (vl-fundecl->loc x))
+      (:vl-paramdecl  (vl-paramdecl->loc x))
+      (:vl-import     (vl-import->loc x))
+      (:vl-fwdtypedef (vl-fwdtypedef->loc x))
+      (otherwise      (progn$ (impossible) *vl-fakeloc*)))))
+
+(define vl-description->comments ((x vl-description-p))
+  :guard (vl-description-has-comments-p x)
+  :returns (comments vl-commentmap-p)
+  (b* ((x (vl-description-fix x)))
+    (case (tag x)
+      (:vl-module    (vl-module->comments x))
+      (:vl-udp       (vl-udp->comments x))
+      (:vl-interface (vl-interface->comments x))
+      (:vl-package   (vl-package->comments x))
+      (:vl-program   (vl-program->comments x))
+      (:vl-config    (vl-config->comments x))
+      (:vl-typedef   (vl-typedef->comments x))
+      (otherwise     (impossible)))))
+
+(define vl-description-add-warning ((x vl-description-p)
+                                    (warning vl-warning-p))
+  :guard (vl-description-has-comments-p x)
+  :returns (new-x vl-description-p)
+  (b* ((x (vl-description-fix x)))
+    (case (tag x)
+      (:vl-module    (change-vl-module    x :warnings (cons warning (vl-module->warnings x))))
+      (:vl-udp       (change-vl-udp       x :warnings (cons warning (vl-udp->warnings x))))
+      (:vl-interface (change-vl-interface x :warnings (cons warning (vl-interface->warnings x))))
+      (:vl-package   (change-vl-package   x :warnings (cons warning (vl-package->warnings x))))
+      (:vl-program   (change-vl-program   x :warnings (cons warning (vl-program->warnings x))))
+      (:vl-config    (change-vl-config    x :warnings (cons warning (vl-config->warnings x))))
+      (:vl-typedef   (change-vl-typedef   x :warnings (cons warning (vl-typedef->warnings x))))
+      (otherwise     (progn$ (impossible) x))))
+  ///
+  (defthm vl-description->name-of-vl-description-add-warning
+    (equal (vl-description->name (vl-description-add-warning x warning))
+           (vl-description->name x))
+    :hints(("Goal" :in-theory (enable vl-description->name)))))
+
+
+(define vl-description-set-comments ((x        vl-description-p)
+                                     (comments vl-commentmap-p))
+  :guard (vl-description-has-comments-p x)
+  :returns (new-x vl-description-p)
+  (b* ((x (vl-description-fix x)))
+    (case (tag x)
+      (:vl-module    (change-vl-module    x :comments comments))
+      (:vl-udp       (change-vl-udp       x :comments comments))
+      (:vl-interface (change-vl-interface x :comments comments))
+      (:vl-package   (change-vl-package   x :comments comments))
+      (:vl-program   (change-vl-program   x :comments comments))
+      (:vl-config    (change-vl-config    x :comments comments))
+      (:vl-typedef   (change-vl-typedef   x :comments comments))
+      (otherwise     (progn$ (impossible) x))))
+  ///
+  (defthm vl-description->name-of-vl-description-set-comments
+    (equal (vl-description->name (vl-description-set-comments x comments))
+           (vl-description->name x))
+    :hints(("Goal" :in-theory (enable vl-description->name)))))
+
+
+
+(define vl-adjust-minloc-for-comments
+  :short "Tweak starting location so that we get comments preceding the
+          @('module') keyword."
+  ((acc     vl-location-p        "Initially line 0 of the file.")
+   (minloc  vl-location-p        "True @('minloc') of the module we're considering.")
+   (descs   vl-descriptionlist-p "All top-level descriptions found in the file."))
+  :returns (adjusted-minloc vl-location-p :hyp :guard)
+  :long "<p>It turns out that useful comments about a module (or other kind of
+top-level description) are often put <b>before</b> the module instead of within
+it.  For instance:</p>
+
+@({
+    // Module: SuchAndSo
+    // Author: John Q. Designer
+    // Purpose: This module is responsible for blah blah blah.  It
+    //          interfaces with units blah and blah, and implements ...
+    // ...
+    module SuchAndSo (...) ;
+      ...
+    endmodule
+})
+
+<p>This is especially common when modules are written in separate files, and
+the comments describing the module are found at the top.  Unfortunately, our
+basic approach to comment gathering&mdash;associating all comments between
+@('module') and @('endmodule')&mdash;misses these comments.</p>
+
+<p>To correct for this, we no longer use the actual @('minloc') for the module.
+Instead, we (almost) choose the largest @('maxloc') of any <i>other</i> module
+such that @('other-maxloc < minloc').  That sounds like gibberish but it makes
+sense if you just draw what portion of the file you want:</p>
+
+@({
+     module foo1 (...);
+      ...
+     endmodule
+
+     module foo2 (...);
+      ...
+     endmodule              <-- largest maxloc less than minloc of bar
+
+     // helpful comments about module bar, which we
+     // want to make sure are associated with bar.
+     module bar (...);
+      ...
+     endmodule
+})
+
+<p>Well, we don't <i>quite</i> use the maxloc of the previous module.  Instead,
+we use <i>maxloc+1</i>.  The reason for this is that sometimes people put in
+really stupid comments after @('end') keywords, such as:</p>
+
+@({
+    module foo (...);
+      ...
+    endmodule // foo
+})
+
+<p>And we don't want to associate this @('// foo') comment with the subsequent
+module.</p>"
+
+  (b* (((when (atom descs))
+        acc)
+       (mod1.maxloc (vl-description->maxloc (car descs)))
+       ((unless (and
+                 ;; The other module needs to be in the same file,
+                 ;; or we don't care about it.
+                 (equal (vl-location->filename acc)
+                        (vl-location->filename mod1.maxloc))
+                 ;; The other module must come BEFORE us, or we don't
+                 ;; care about it.
+                 (< (vl-location->line mod1.maxloc)
+                    (vl-location->line minloc))
+                 ;; The other module must be PAST our current max,
+                 ;; or we don't care about it.
+                 (< (vl-location->line acc)
+                    (vl-location->line mod1.maxloc))))
+        (vl-adjust-minloc-for-comments acc minloc (cdr descs)))
+       ;; Else, mod1.maxloc is better than what we have now.
+       (acc (change-vl-location acc
+                                ;; Goofy computation ensures we never go backwards,
+                                ;; in case of one-line module ... endmodule stuff.
+                                :line (min (+ 1 (vl-location->line mod1.maxloc))
+                                           (vl-location->line minloc)))))
+    (vl-adjust-minloc-for-comments acc minloc (cdr descs)))
+  ///
+  (defthm bound-of-vl-adjust-minloc-for-comments
+    (implies (and (<= (vl-location->line acc) (vl-location->line minloc))
+                  (force (vl-location-p acc))
+                  (force (vl-location-p minloc))
+                  (force (vl-descriptionlist-p descs)))
+             (<= (vl-location->line (vl-adjust-minloc-for-comments acc minloc descs))
+                 (vl-location->line minloc)))
+    :rule-classes ((:rewrite) (:linear))))
+
+
+(define vl-description-inject-comments
   :parents (vl-commentmap-p)
-  ((x   vl-module-p        "Module to inject some comments into.")
-   (fal vl-commentmap-falp "All comments, gathered before parsing."))
-  :returns (new-x vl-module-p :hyp :fguard
-                  "Same as @('x'), but with comments added.")
-  (b* (((when (vl-module->hands-offp x))
+  ((x         vl-description-p
+              "Description to inject some comments into.")
+   (fal       vl-commentmap-falp
+              "All comments, gathered before parsing.")
+   (all-descs vl-descriptionlist-p
+              "All descriptions, used to adjust starting locations."))
+  :returns (new-x vl-description-p "Same as @('x'), but with comments added.")
+  (b* (;; When we only supported modules, we respected hands-off here.  But
+       ;; I don't think there's any reason to worry about that.
+       (x       (vl-description-fix x))
+       ((unless (vl-description-has-comments-p x))
+        ;; Something too simple like a net declaration, no comments anyway.
         x)
-       (minloc  (vl-module->minloc x))
-       (maxloc  (vl-module->maxloc x))
+       (minloc  (vl-description->minloc x))
+       (maxloc  (vl-description->maxloc x))
        ((unless (<= (vl-location->line minloc) (vl-location->line maxloc)))
-        (let ((warnings (warn :type :vl-warn-comment-injection
-                              :msg "Cannot add comments, minloc exceeds maxloc?~% ~
-                                    minloc = ~l0; maxloc = ~l1."
-                              :args (list minloc maxloc)
-                              :acc (vl-module->warnings x))))
-          (change-vl-module x :warnings warnings)))
+        (let ((w (make-vl-warning :type :vl-warn-comment-injection
+                                  :msg "Cannot add comments, minloc exceeds ~
+                                        maxloc?~% minloc = ~l0; maxloc = ~l1."
+                                  :args (list minloc maxloc)
+                                  :fatalp nil
+                                  :fn __function__)))
+          (vl-description-add-warning x w)))
+       (minloc (vl-adjust-minloc-for-comments (change-vl-location minloc :line 1)
+                                              minloc all-descs))
        (comments (vl-gather-comments-fal minloc maxloc fal)))
     (if (not comments)
         x
-      (change-vl-module x :comments comments)))
+      (vl-description-set-comments x comments)))
   ///
-  (defthm vl-module->name-of-vl-inject-comments-module
-    (equal (vl-module->name (vl-inject-comments-module x comment-map))
-           (vl-module->name x))))
+  (defthm vl-description->name-of-vl-description-inject-comments
+    (equal (vl-description->name (vl-description-inject-comments x comment-map all-mods))
+           (vl-description->name x))))
+
+(defprojection vl-descriptionlist-inject-comments-aux ((x         vl-descriptionlist-p)
+                                                       (fal       vl-commentmap-falp)
+                                                       (all-descs vl-descriptionlist-p))
+  :returns (new-x vl-descriptionlist-p)
+  (vl-description-inject-comments x fal all-descs)
+  ///
+  (defthm vl-descriptionlist->names-of-vl-descriptionlist-inject-comments-aux
+    (equal (vl-descriptionlist->names (vl-descriptionlist-inject-comments-aux x fal all-descs))
+           (vl-descriptionlist->names x))))
 
 
-(defprojection vl-inject-comments-modulelist-aux (x fal)
-  (vl-inject-comments-module x fal)
-  :guard (and (vl-modulelist-p x)
-              (vl-commentmap-falp fal))
-  :result-type vl-modulelist-p
+(define vl-descriptionlist-inject-comments
   :parents (vl-commentmap-p)
-  :rest
-  ((defthm vl-modulelist->names-of-vl-inject-comments-modulelist-aux
-     (equal (vl-modulelist->names (vl-inject-comments-modulelist-aux x comment-map))
-            (vl-modulelist->names x)))))
-
-
-(define vl-inject-comments-modulelist
-  :parents (vl-commentmap-p)
-  :short "Associate all comments with their modules."
-  ((x           vl-modulelist-p "Parsed modules.")
-   (comment-map vl-commentmap-p "Comments gathered before parsing."))
-  :returns (new-x vl-modulelist-p :hyp :fguard
-                  "Parsed modules with their comments attached.")
+  :short "Associate all comments with their modules/interfaces/etc."
+  ((x           vl-descriptionlist-p "Parsed modules, packages, etc.")
+   (comment-map vl-commentmap-p      "Comments gathered before parsing."))
+  :returns
+  (new-x vl-descriptionlist-p "Parsed descriptions with their comments attached.")
   (b* ((fal (vl-commentmap-fal comment-map))
-       (ret (vl-inject-comments-modulelist-aux x fal)))
+       (ret (vl-descriptionlist-inject-comments-aux x fal x)))
     (fast-alist-free fal)
     ret)
   ///
-  (defthm vl-modulelist->names-of-vl-inject-comments-modulelist
-    (equal (vl-modulelist->names (vl-inject-comments-modulelist x comment-map))
-           (vl-modulelist->names x))))
+  (defthm vl-descriptionlist->names-of-vl-descriptionlist-inject-comments
+    (equal (vl-descriptionlist->names (vl-descriptionlist-inject-comments x comment-map))
+           (vl-descriptionlist->names x))))
 
-
-;; BELOW THIS LINE THERE ARE ONLY COMMENTS.
-
-
-#||
-
-
-; Here are some alternate approaches we tried.
-
-; This was pretty good, and took about 10 seconds for top.v but allocated
-; almost a gigabyte.
-
-(defund vl-fast-extract-comments (min max cmap mine yours)
-  "Returns (MV MINE YOURS)"
-  (declare (xargs :guard (and (vl-location-p min)
-                              (vl-location-p max)
-                              (vl-commentmap-p cmap)
-                              (vl-commentmap-p mine)
-                              (vl-commentmap-p yours))))
-
-; We split up the comment map into two sections:
-;   - mine are the comments between min and max
-;   - yours are any other comments
-
-  (cond ((atom cmap)
-         (mv mine yours))
-        ((vl-location-between-p (caar cmap) min max)
-         (vl-fast-extract-comments min max (cdr cmap) (cons (car cmap) mine) yours))
-        (t
-         (vl-fast-extract-comments min max (cdr cmap) mine (cons (car cmap) yours)))))
-
-(defthm true-listp-of-vl-fast-extract-comments-1
-  (equal (true-listp (first (vl-fast-extract-comments min max cmap mine yours)))
-         (true-listp mine))
-  :hints(("Goal" :in-theory (enable vl-fast-extract-comments))))
-
-(defthm true-listp-of-vl-fast-extract-comments-2
-  (equal (true-listp (second (vl-fast-extract-comments min max cmap mine yours)))
-         (true-listp yours))
-  :hints(("Goal" :in-theory (enable vl-fast-extract-comments))))
-
-(defund vl-extract-comments (min max cmap)
-  "Returns (MV MINE YOURS)"
-  (declare (xargs :guard (and (vl-location-p min)
-                              (vl-location-p max)
-                              (vl-commentmap-p cmap))
-                  :verify-guards nil))
-
-; This function nicely maintains the order of cmap.  So, if you sort the thing
-; to begin with, both mine and yours will still be in order.
-
-  (mbe :logic
-       (if (atom cmap)
-           (mv nil nil)
-         (mv-let (mine yours)
-                 (vl-extract-comments min max (cdr cmap))
-                 (if (vl-location-between-p (caar cmap) min max)
-                     (mv (cons (car cmap) mine) yours)
-                   (mv mine (cons (car cmap) yours)))))
-       :exec
-       (mv-let (mine yours)
-               (vl-fast-extract-comments min max cmap nil nil)
-               ;; Efficiency hack: don't do reversals if mine is empty.
-               (if (not mine)
-                   (mv nil cmap)
-                 (mv (reverse mine) (reverse yours))))))
-
-(defthm true-listp-of-vl-extract-comments-1
-  (true-listp (first (vl-extract-comments min max cmap)))
-  :rule-classes :type-prescription
-  :hints(("Goal" :in-theory (enable vl-extract-comments))))
-
-(defthm true-listp-of-vl-extract-comments-2
-  (true-listp (second (vl-extract-comments min max cmap)))
-  :rule-classes :type-prescription
-  :hints(("Goal" :in-theory (enable vl-extract-comments))))
-
-(encapsulate
- ()
- (local (defthm guard-lemma-1
-          (implies (true-listp mine)
-                   (equal (first (vl-fast-extract-comments min max cmap mine yours))
-                          (revappend (first (vl-extract-comments min max cmap)) mine)))
-          :hints(("Goal" :in-theory (enable vl-extract-comments vl-fast-extract-comments)))))
-
- (local (defthm guard-lemma-2
-          (implies (true-listp mine)
-                   (equal (second (vl-fast-extract-comments min max cmap mine yours))
-                          (revappend (second (vl-extract-comments min max cmap)) yours)))
-          :hints(("Goal" :in-theory (enable vl-extract-comments vl-fast-extract-comments)))))
-
- (local (defthm guard-lemma-3
-          (implies (not (first (vl-extract-comments min max cmap)))
-                   (equal (second (vl-extract-comments min max cmap))
-                          (list-fix cmap)))
-          :hints(("Goal" :in-theory (enable vl-extract-comments)))))
-
- (local (defthm equal-of-cons-rewrite
-          (equal (equal (cons a b) x)
-                 (and (consp x)
-                      (equal a (car x))
-                      (equal b (cdr x))))))
-
- (verify-guards vl-extract-comments
-                :hints(("Goal" :in-theory (enable vl-extract-comments)))))
-
-(defthm vl-commentmap-p-of-vl-extract-comments-1
-  (implies (and (force (vl-commentmap-p cmap))
-                (force (vl-commentmap-p mine)))
-           (vl-commentmap-p (first (vl-extract-comments min max cmap))))
-  :hints(("Goal" :in-theory (enable vl-extract-comments))))
-
-(defthm vl-commentmap-p-of-vl-extract-comments-2
-  (implies (and (force (vl-commentmap-p cmap))
-                (force (vl-commentmap-p yours)))
-           (vl-commentmap-p (second (vl-extract-comments min max cmap))))
-  :hints(("Goal" :in-theory (enable vl-extract-comments))))
-
-
-
-(defund vl-inject-comments-module (x cmap)
-  "Returns (X-PRIME CMAP-PRIME)"
-  (declare (xargs :guard (and (vl-module-p x)
-                              (vl-commentmap-p cmap))))
-  (b* ((minloc          (vl-module->minloc x))
-       (maxloc          (vl-module->maxloc x))
-       ((mv mine yours) (vl-extract-comments minloc maxloc cmap)))
-      (if (not mine)
-          (mv x cmap)
-        (mv (change-vl-module x :comments mine)
-            yours))))
-
-(defthm vl-module-p-of-vl-inject-comments-module-1
-  (implies (and (force (vl-module-p x))
-                (force (vl-commentmap-p cmap)))
-           (vl-module-p (first (vl-inject-comments-module x cmap))))
-  :hints(("Goal" :in-theory (enable vl-inject-comments-module))))
-
-(defthm vl-commentmap-p-of-vl-inject-comments-module-2
-  (implies (and (force (vl-module-p x))
-                (force (vl-commentmap-p cmap)))
-           (vl-commentmap-p (second (vl-inject-comments-module x cmap))))
-  :hints(("Goal" :in-theory (enable vl-inject-comments-module))))
-
-
-(defund vl-inject-comments-modulelist (x cmap)
-  (declare (xargs :guard (and (vl-modulelist-p x)
-                              (vl-commentmap-p cmap))))
-  (if (atom x)
-      nil
-    (mv-let (car-prime cmap)
-            (vl-inject-comments-module (car x) cmap)
-            (cons car-prime
-                  (vl-inject-comments-modulelist (cdr x) cmap)))))
-
-(defthm vl-modulelist-p-of-vl-inject-comments-modulelist
-  (implies (and (force (vl-modulelist-p x))
-                (force (vl-commentmap-p cmap)))
-           (vl-modulelist-p (vl-inject-comments-modulelist x cmap)))
-  :hints(("Goal" :in-theory (enable vl-inject-comments-modulelist))))
-
-
-
-; Just using gather-comments directly took about 20 seconds but involved
-; almost no allocation
-
-(defund vl-inject-comments-module (x cmap)
-  "Returns (X-PRIME CMAP-PRIME)"
-  (declare (xargs :guard (and (vl-module-p x)
-                              (vl-commentmap-p cmap))))
-  (b* ((minloc  (vl-module->minloc x))
-       (maxloc  (vl-module->maxloc x))
-       (mine    (vl-gather-comments minloc maxloc cmap)))
-      (mv (if mine
-              (change-vl-module x :comments mine)
-            x)
-          cmap)))
-
-
-; Eventually I would like to prove that vl-gather-comments-fal is the same as
-; vl-gather-comments.  The claim would probably be something like this, except
-; that we probably also need to know that the comment map is sorted.
-
-;; (defthm crock
-;;   (implies (and (vl-location-p min)
-;;                 (vl-location-p max)
-;;                 (<= (vl-location->line min) (vl-location->line max))
-;;                 (vl-commentmap-p cmap))
-;;            (equal (vl-gather-comments-fal min max (vl-commentmap-fal cmap))
-;;                   (vl-gather-comments min max cmap))))
-
-; Here is a simple test that at least shows the above theorem is possibly true.
-
-(defconst *cmap*
-  '(((:vl-location "file" 1 . 0) . "// Comment a1")
-    ((:vl-location "file" 1 . 1) . "// Comment a2")
-    ((:vl-location "file" 1 . 2) . "// Comment a3")
-    ((:vl-location "file" 2 . 0) . "// Comment b1")
-    ((:vl-location "file" 2 . 1) . "// Comment b2")
-    ((:vl-location "file" 2 . 2) . "// Comment b3")))
-
-(vl-gather-comments
- '(:vl-location "file" 1 . 0)
- '(:vl-location "file" 3 . 0)
- *cmap*)
-
-(vl-gather-comments-fal
- '(:vl-location "file" 1 . 0)
- '(:vl-location "file" 3 . 0)
- (vl-commentmap-fal *cmap*))
-
-; And below are some fledgling efforts toward trying to show this, but I do not
-; have a real proof in mind yet and there are other important things to do.
-
-(defund vl-slice-comment-map (line x)
-  (declare (xargs :guard (and (posp line)
-                              (vl-commentmap-p x))))
-  (cond ((atom x)
-         nil)
-        ((equal line (vl-location->line (caar x)))
-         (cons (car x) (vl-slice-comment-map line (cdr x))))
-        (t
-         (vl-slice-comment-map line (cdr x)))))
-
-(defthm vl-slice-comment-map-when-not-consp
-  (implies (not (consp x))
-           (equal (vl-slice-comment-map line x)
-                  nil))
-  :hints(("Goal" :in-theory (enable vl-slice-comment-map))))
-
-(defthm vl-slice-comment-map-of-cons
-  (equal (vl-slice-comment-map line (cons a x))
-         (if (equal (vl-location->line (car a)) line)
-             (cons a (vl-slice-comment-map line x))
-           (vl-slice-comment-map line x)))
-  :hints(("Goal" :in-theory (enable vl-slice-comment-map))))
-
-(defthm cdr-of-hons-assoc-equal-of-vl-commentmap-fal-aux
-  (implies (and (vl-commentmap-p cmap)
-                (vl-commentmap-falp alist))
-           (equal (cdr (hons-assoc-equal line (vl-commentmap-fal-aux cmap alist)))
-                  (revappend (vl-slice-comment-map line cmap)
-                             (cdr (hons-assoc-equal line alist)))))
-  :hints(("Goal"
-          :in-theory (enable vl-commentmap-fal-aux)
-          :do-not '(generalize fertilize))))
-
-(defthm vl-commentmap-p-of-vl-slice-comment-map
-  (implies (force (vl-commentmap-p x))
-           (vl-commentmap-p (vl-slice-comment-map line x)))
-  :hints(("Goal" :induct (len x))))
-
-(defthm type-of-vl-location->line
-  (implies (force (vl-location-p x))
-           (posp (vl-location->line x)))
-  :rule-classes :type-prescription)
-
-(defund vl-slice-gather-comments (min max n x)
-  (declare (xargs :guard (and (vl-location-p min)
-                              (vl-location-p max)
-                              (natp n)
-                              (<= (vl-location->line min) n)
-                              (<= n (vl-location->line max))
-                              (vl-commentmap-p x))
-                  :hints(("Goal" :in-theory (disable (force))))
-                  :measure (nfix (- (nfix n)
-                                    (nfix (vl-location->line min))))))
-  (let* ((slice          (vl-slice-comment-map n x))
-         (slice-comments (vl-gather-comments min max slice)))
-    (if (zp (- (nfix n) (nfix (vl-location->line min))))
-        slice-comments
-      (append slice-comments
-              (vl-slice-gather-comments min max (- (nfix n) 1) x)))))
-
-(defthm vl-slice-gather-comments-correct
-  (implies (and (vl-location-p min)
-                (vl-location-p max)
-                (natp n)
-                (<= (vl-location->line min) n)
-                (<= n (vl-location->line max)))
-           (equal (vl-slice-gather-comments min max n x)
-                  (vl-gather-comments min max x)))
-  :hints(("Goal" :in-theory (enable vl-slice-gather-comments
-                                    vl-gather-comments))))
-
-(defund vl-naive-gather-comments-fal (min max fal)
-  (declare (xargs :guard (and (vl-location-p min)
-                              (vl-location-p max)
-                              (vl-commentmap-falp fal))))
-  (if (atom fal)
-      nil
-    (append (vl-gather-comments min max (cdar fal))
-            (vl-naive-gather-comments-fal min max (cdr fal)))))
-
-
-||#
+; BOZO we currently leave some comments unaccounted for.  For instance,
+; consider something like:
+;
+;    module foo ... endmodule
+;
+;    // comment about the import
+;    import mypkg::name;
+;
+;    // comment about bar
+;    module bar ... endmodule
+;
+; Here we'll get the comment about bar and associate it with bar.  However,
+; since imports don't have comments, the comment about the import will be lost.
+; Some day we might try to gather these comments and stick them in the design.
+; For now, well, we used to skip ALL comments between modules, so we're still
+; working pretty hard to do something reasonably sensible.
 

@@ -2,24 +2,37 @@
 ; Copyright (C) 2013 Kookamara LLC
 ;
 ; Contact:
+;
 ;   Kookamara LLC
 ;   11410 Windermere Meadows
-;   Austin, TX 78759
+;   Austin, TX 78759, USA
+;   http://www.kookamara.com/
 ;
-; This program is free software; you can redistribute it and/or modify it under
-; the terms of the GNU General Public License as published by the Free Software
-; Foundation; either version 2 of the License, or (at your option) any later
-; version.  This program is distributed in the hope that it will be useful but
-; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-; more details.  You should have received a copy of the GNU General Public
-; License along with this program; if not, write to the Free Software
-; Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335, USA.
+; License: (An MIT/X11-style license)
 ;
-; Original authors: Jared Davis <jared@kookamara.com>
+;   Permission is hereby granted, free of charge, to any person obtaining a
+;   copy of this software and associated documentation files (the "Software"),
+;   to deal in the Software without restriction, including without limitation
+;   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+;   and/or sell copies of the Software, and to permit persons to whom the
+;   Software is furnished to do so, subject to the following conditions:
+;
+;   The above copyright notice and this permission notice shall be included in
+;   all copies or substantial portions of the Software.
+;
+;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;   DEALINGS IN THE SOFTWARE.
+;
+; Original author: Jared Davis <jared@kookamara.com>
 
 (in-package "ACL2")
 (include-book "std/util/da-base" :dir :system)
+(include-book "std/util/defaggrify-defrec" :dir :system)
 (include-book "system/origin" :dir :system)
 (include-book "std/strings/cat" :dir :system)
 (include-book "tools/rulesets" :dir :system)
@@ -29,62 +42,7 @@
 (set-state-ok t)
 (program)
 
-
-;; (DA-DEFREC-EMULATION REC) -- Adds defaggregate-style emulation for DEFREC records
-;;   - Adds foo->bar style accessors
-;;   - Adds defaggregate-like b* binders
-
-(defun flatten-defrec-fields (x)
-  ;; Flatten a defrec field layout (which can be an arbitrary shaped cons tree)
-  ;; into an ordinary list.
-  (if (atom x)
-      (and x (list x))
-    (append (flatten-defrec-fields (car x))
-            (flatten-defrec-fields (cdr x)))))
-
-(defun look-up-defrec-fields (rec world)
-  ;; Horrible awful thing.  The fields for a defrec aren't saved anywhere
-  ;; explicitly, but we can look them up in the body of the MAKE function.
-  ;; See the function MAKE-RECORD-MAKER in the acl2 sources.
-  (b* ((maker (record-maker-function-name rec))
-       (body  (getprop maker 'macro-body nil 'current-acl2-world world))
-       ((unless body)
-        (er hard? 'look-up-defrec-field-layout
-            "Can't find macro-body for maker ~x0 of defrec ~x1.  is ~x1 even ~
-             a defrec?" maker rec))
-       (quoted-layout (third body))
-       ((unless (quotep quoted-layout))
-        (er hard? 'look-up-defrec-field-layout
-            "Sanity check failed, field layout of ~x0 is not a quotep?" rec)))
-    (flatten-defrec-fields
-     (unquote quoted-layout))))
-
-(defun da-accessor-for-defrec-field (rec field)
-  ;; Create a defaggregate-style accessor foo->bar for field bar of defrec foo
-  `(defun-inline ,(std::da-accessor-name rec field) (x)
-     (declare (xargs :guard (,(intern$ (str::cat "WEAK-" (symbol-name rec) "-P") "ACL2") x)))
-     (access ,rec x ,(intern$ (symbol-name field) "KEYWORD"))))
-
-(defun da-accessors-for-defrec-fields (rec fields)
-  (if (atom fields)
-      nil
-    (cons (da-accessor-for-defrec-field rec (car fields))
-          (da-accessors-for-defrec-fields rec (cdr fields)))))
-
-(defun da-defrec-emulation-fn (rec world)
-  (let ((fields (look-up-defrec-fields rec world)))
-    `(progn
-       ,@(da-accessors-for-defrec-fields rec fields)
-       ,(std::da-make-binder rec fields))))
-
-(defmacro da-defrec-emulation (rec)
-  `(make-event
-    (b* ((world (w state)))
-      (value (da-defrec-emulation-fn ',rec world)))))
-
-(da-defrec-emulation rewrite-rule)
-
-
+(std::defaggrify-defrec rewrite-rule)
 
 ;; Gather all rewrite rules in the universal theory
 
@@ -108,7 +66,7 @@
    (find-rules-of-runes (rules-of-class :rewrite :here) world)))
 
 (defun filter-disabled-rules (x ens state)
-  (cond ((atom x) 
+  (cond ((atom x)
          nil)
         ((active-runep (rewrite-rule->rune (car x)))
          (cons (car x) (filter-disabled-rules (cdr x) ens state)))
@@ -120,7 +78,6 @@
          (ens   (ens state))
          (rules (get-all-rewrite-rules world)))
     (filter-disabled-rules rules ens state)))
-
 
 
 ;; Looking for compatible, redundant rules
@@ -229,9 +186,6 @@
    (find-redundancies-top (get-enabled-rewrite-rules state))
    state))
 
-(defmacro lint ()
-  `(lint-fn state))
-
 
 ;; there could probably be some kind of quick filtering based on leading function symbol to
 ;; narrow the search down...
@@ -244,6 +198,6 @@
  "tools/lint" :dir :system)
 (include-book
  "centaur/bitops/top" :dir :system)
-(lint)
+(lint-fn state)
 
 ||#
